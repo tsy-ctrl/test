@@ -15,7 +15,6 @@ import hmac
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
-from moviepy.config import change_settings
 from telethon import TelegramClient
 from flask import Flask, render_template, url_for, request, jsonify
 from telethon import events
@@ -39,7 +38,6 @@ if platform.system() == "Darwin":
     print("FFMPEG path: ", ffmpeg_path)
     os.environ["IMAGEIO_FFMPEG_EXE"] = ffmpeg_path
     os.chmod(ffmpeg_path, 0o755)
-    change_settings({"FFMPEG_BINARY": ffmpeg_path})
 
 from moviepy import VideoFileClip
 
