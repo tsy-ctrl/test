@@ -28,15 +28,15 @@ jobs:
         pip install send2trash
         pip install pyperclip
         pip install cryptg
-        pip install pysocks
     
     - name: Build executable
       run: |
-        chmod +x ffmpeg  # Делаем ffmpeg исполняемым
+        chmod +x ffmpeg
         pyinstaller --onefile \
                    --noconfirm \
-                   --add-data "ffmpeg:." \
+                   --add-binary "ffmpeg:." \
                    --hidden-import=imageio_ffmpeg \
+                   --collect-all imageio_ffmpeg \
                    --console "crop.py"
     
     - name: Upload artifact
