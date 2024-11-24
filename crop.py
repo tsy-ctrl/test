@@ -37,7 +37,11 @@ else:
     current_directory = os.path.dirname(os.path.abspath(__file__))
 
 if platform.system() == "Darwin":
-    os.environ["IMAGEIO_FFMPEG_EXE"] = os.path.join(current_directory, "ffmpeg")
+    base_path = os.path.dirname(sys.executable)
+    ffmpeg_path = os.path.join(base_path, "ffmpeg")
+    os.environ["IMAGEIO_FFMPEG_EXE"] = ffmpeg_path
+    # Делаем ffmpeg исполняемым
+    os.chmod(ffmpeg_path, 0o755)
 
 sys.stdout.flush()
 # Initialize the Flask application
