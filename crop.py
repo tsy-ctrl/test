@@ -16,6 +16,7 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 from moviepy import VideoFileClip
+from moviepy.config import change_settings
 from telethon import TelegramClient
 from flask import Flask, render_template, url_for, request, jsonify
 from telethon import events
@@ -36,12 +37,16 @@ if getattr(sys, 'frozen', False):
 else:
     current_directory = os.path.dirname(os.path.abspath(__file__))
 
+# Получаем путь к директории, где находится исполняемый файл
+exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+
 if platform.system() == "Darwin":
-    base_path = os.path.dirname(sys.executable)
-    ffmpeg_path = os.path.join(base_path, "ffmpeg")
-    os.environ["IMAGEIO_FFMPEG_EXE"] = ffmpeg_path
-    # Делаем ffmpeg исполняемым
-    os.chmod(ffmpeg_path, 0o755)
+    ffmpeg_path = os.path.join(exe_dir, "ffmpeg")
+    if os.path.exists(ffmpeg_path):
+        # Устанавливаем права на выполнение
+        os.chmod(ffmpeg_path, 0o755)
+        # Устанавливаем путь к ffmpeg для moviepy
+        change_settings({"FFMPEG_BINARY": ffmpeg_path})
 
 sys.stdout.flush()
 # Initialize the Flask application
