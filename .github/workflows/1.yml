@@ -19,7 +19,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pyinstaller
-        pip install moviepy
+        pip install "moviepy>=2.0.0"
         pip install imageio_ffmpeg
         pip install telethon
         pip install flask
@@ -28,15 +28,17 @@ jobs:
         pip install send2trash
         pip install pyperclip
         pip install cryptg
+        pip install pysocks
     
     - name: Build executable
       run: |
         chmod +x ffmpeg
         pyinstaller --onefile \
                    --noconfirm \
-                   --add-binary "ffmpeg:." \
+                   --add-binary="ffmpeg:." \
+                   --hidden-import=moviepy.config \
                    --hidden-import=imageio_ffmpeg \
-                   --collect-all imageio_ffmpeg \
+                   --hidden-import=moviepy \
                    --console "crop.py"
     
     - name: Upload artifact
