@@ -32,24 +32,17 @@ import pyperclip
 import cryptg
 import uuid
 
-if getattr(sys, 'frozen', False):
-    current_directory = os.path.dirname(sys.executable)
-else:
-    current_directory = os.path.dirname(os.path.abspath(__file__))
-
-# Получаем путь к директории, где находится исполняемый файл
-exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+exe_path = os.path.abspath(sys.executable)
+exe_dir = os.path.dirname(exe_path)
+ffmpeg_path = os.path.join(exe_dir, "ffmpeg")
 
 if platform.system() == "Darwin":
-    ffmpeg_path = os.path.join(exe_dir, "ffmpeg")
-    if os.path.exists(ffmpeg_path):
-        # Устанавливаем права на выполнение
-        os.chmod(ffmpeg_path, 0o755)
-        # Устанавливаем путь к ffmpeg для moviepy
-        change_settings({"FFMPEG_BINARY": ffmpeg_path})
+    print("FFMPEG path: ", ffmpeg_path)
+    os.environ["IMAGEIO_FFMPEG_EXE"] = ffmpeg_path
+    os.chmod(ffmpeg_path, 0o755)
+    change_settings({"FFMPEG_BINARY": ffmpeg_path})
 
 sys.stdout.flush()
-# Initialize the Flask application
 
 templatesDir = os.getcwd() + '/templates'
 staticDir = os.getcwd() + '/static'
