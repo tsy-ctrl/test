@@ -890,7 +890,7 @@ def run_batch_file():
     return
 
 SECRET_KEY = 'shared_secret_key'
-TIME_THRESHOLD = 10 
+TIME_THRESHOLD = 30 
 
 def validate_time_based_key(provided_key: str, timestamp: str) -> bool:
     try:
