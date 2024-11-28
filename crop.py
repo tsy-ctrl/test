@@ -521,6 +521,113 @@ def write_to_posts(message):
 
 isProcessing = False
 
+async def process_messages_for_author(message, original_author, start_id):
+    global last_author
+    global isProcessing
+
+    # Reset folder if author changed
+    if original_author != last_author:
+        folder_path = "./images"
+        for filename in os.listdir(folder_path):
+            os.remove(os.path.join(folder_path, filename))
+        if switch:
+            delete_files_py()
+
+    last_author = original_author
+    user = await message.client.get_entity(original_author)
+    try:
+        await message.client(AddContactRequest(
+            id=user.id,
+            first_name=user.first_name if hasattr(user, 'first_name') and user.first_name is not None else '',
+            last_name=user.last_name if hasattr(user, 'last_name') and user.last_name is not None else '',
+            phone=user.phone if hasattr(user, 'phone') and user.phone is not None else '',
+            add_phone_privacy_exception=False
+        ))
+    except: 
+        pass
+
+    chat_user = await message.client.get_entity(message.chat_id)
+    nickname = ' '.join(chat_user.first_name.split()[:2]) if hasattr(chat_user, 'first_name') else 'Unknown'
+
+    # Reset files
+    with open(os.path.join('..', 'files', 'posts.txt'), 'w', encoding='utf-8'):
+        pass
+    with open(os.path.join('..', 'files', 'tags.txt'), 'w', encoding='utf-8'):
+        pass
+
+    with app.app_context():
+        with open('templates/output.html', 'w', encoding='utf-8') as f:
+            f.write(f'''
+            <html>
+            <head>
+                <link rel="icon" href="https://i.imgur.com/OlZfxre.png">
+                <link rel="preconnect" href="https://fonts.googleapis.com">
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+                <link href="https://fonts.googleapis.com/css2?family=Varela+Round&display=swap" rel="stylesheet">
+                <title>of helper by @yen_ofsfs</title>
+                <link rel="stylesheet" type="text/css" href="{url_for('static', filename='styles.css')}">
+                <script src="{url_for('static', filename='script.js')}"></script>
+            </head>
+            <body onload="setInterval('checkFiles(`{nickname}`)', 1000)">
+            <div class="header">
+            <div class="button1" onclick="deleteOneFile()">1</div>
+            <div class="button3" onclick="switchAutoDelete()" style="background-color: {get_color(switch)};"></div>
+            <div class="button2" onclick="deleteFiles()">
+            <div id="button-text">0</div>
+            <div id="button-del">Del</div>
+            </div>
+            <button id="send-button" onclick="sendFiles(`{message.chat_id}`, `{get_client_id(message.client)}`, event)">Send Files</button>
+            <div>
+             <button id="open-folder-button" onclick="openFolder()">Open Folder</button>
+             <button id="copy-files-button" onclick="copyFiles()">Copy Files</button>
+            </div>
+            </div>
+            <div class="container">
+            <div id="delete-status"></div>
+            <div id="send-status"></div>
+            ''')
+
+        def check_same_group(message1, message2):
+            if message1.grouped_id is None or message2.grouped_id is None:
+                return False
+            return message1.grouped_id == message2.grouped_id
+
+        messages_to_process = []
+        messageCount = 0
+        async for msg in message.client.iter_messages(message.chat_id, min_id=start_id-1, reverse=True):
+            if msg.sender_id != original_author or not msg.media:
+                break
+            if (msg.text and '@' in msg.text):
+                messages_to_process.append(msg)
+                messageCount = messageCount + 1
+
+        for i in range(len(messages_to_process) - 1):
+            if check_same_group(messages_to_process[i], messages_to_process[i + 1]):
+                messages_to_process[i], messages_to_process[i + 1] = messages_to_process[i + 1], messages_to_process[i]
+
+        with open('templates/output.html', 'a', encoding='utf-8') as f:
+            f.write(f'<div class = "len-messages"> 0 / {messageCount} </div>')
+
+        await asyncio.gather(*(process_message(msg, index) for index, msg in enumerate(messages_to_process)))
+
+        for msg in messages_to_process:
+            write_to_posts(msg)
+
+        with open('templates/output.html', 'a', encoding='utf-8') as output_file:
+            # Идем по номерам файлов в нужном порядке
+            for i in range(len(messages_to_process)):
+                temp_filename = f'templates/output_{i}.html'
+                # Проверяем, существует ли временный файл
+                if os.path.exists(temp_filename):
+                    # Открываем временный файл и записываем его содержимое в основной файл
+                    with open(temp_filename, 'r', encoding='utf-8') as temp_file:
+                        output_file.write(temp_file.read())
+                    # Удаляем временный файл после его использования
+                    os.remove(temp_filename)
+
+        with open('templates/output.html', 'a', encoding='utf-8') as f:
+            f.write(f'</div> </div> </body></html>')
+
 async def process_event(event):
     try:
         global last_author
@@ -534,104 +641,10 @@ async def process_event(event):
                 pyperclip.copy(message_text)
                 start_id = replied_message.id
                 original_author = replied_message.sender_id
-                if original_author != last_author:
-                    folder_path = "./images"
-                    for filename in os.listdir(folder_path):
-                            os.remove(os.path.join(folder_path, filename))
-                    if switch:
-                        delete_files_py()
-
-                last_author = original_author
-                user = await event.client.get_entity(original_author)
-                try:
-                    await event.client(AddContactRequest(
-                        id=user.id,
-                        first_name=user.first_name if hasattr(user, 'first_name') and user.first_name is not None else '',
-                        last_name=user.last_name if hasattr(user, 'last_name') and user.last_name is not None else '',
-                        phone=user.phone if hasattr(user, 'phone') and user.phone is not None else '',
-                        add_phone_privacy_exception=False
-                    ))
-                except: 
-                     pass
-                chat_user = await event.client.get_entity(event.chat_id)
-                nickname = ' '.join(chat_user.first_name.split()[:2]) if hasattr(chat_user, 'first_name') else 'Unknown'
-                with open(os.path.join('..', 'files', 'posts.txt'), 'w', encoding='utf-8'):
-                        pass
-                with open(os.path.join('..', 'files', 'tags.txt'), 'w', encoding='utf-8'):
-                    pass
-                with app.app_context():
-                    with open('templates/output.html', 'w', encoding='utf-8') as f:
-                        f.write(f'''
-                        <html>
-                        <head>
-                            <link rel="icon" href="https://i.imgur.com/OlZfxre.png">
-                            <link rel="preconnect" href="https://fonts.googleapis.com">
-                            <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-                            <link href="https://fonts.googleapis.com/css2?family=Varela+Round&display=swap" rel="stylesheet">
-                            <title>of helper by @yen_ofsfs</title>
-                            <link rel="stylesheet" type="text/css" href="{url_for('static', filename='styles.css')}">
-                            <script src="{url_for('static', filename='script.js')}"></script>
-                        </head>
-                        <body onload="setInterval('checkFiles(`{nickname}`)', 1000)">
-                        <div class="header">
-                        <div class="button1" onclick="deleteOneFile()">1</div>
-                        <div class="button3" onclick="switchAutoDelete()" style="background-color: {get_color(switch)};"></div>
-                        <div class="button2" onclick="deleteFiles()">
-                        <div id="button-text">0</div>
-                        <div id="button-del">Del</div>
-                        </div>
-                        <button id="send-button" onclick="sendFiles(`{event.chat_id}`, `{get_client_id(event.client)}`, event)">Send Files</button>
-                        <div>
-                         <button id="open-folder-button" onclick="openFolder()">Open Folder</button>
-                         <button id="copy-files-button" onclick="copyFiles()">Copy Files</button>
-                        </div>
-                        </div>
-                        <div class="container">
-                        <div id="delete-status"></div>
-                        <div id="send-status"></div>
-                        ''')
-
-                    def check_same_group(message1, message2):
-                            if message1.grouped_id is None or message2.grouped_id is None:
-                                return False
-                            return message1.grouped_id == message2.grouped_id
-
-                    messages_to_process = []
-                    messageCount = 0
-                    async for message in event.client.iter_messages(event.chat_id, min_id=start_id-1, reverse=True):
-                         if message.sender_id != original_author or not message.media:
-                            break
-                         if (message.text and '@' in message.text):
-                              messages_to_process.append(message)
-                              messageCount = messageCount + 1
-
-                    for i in range(len(messages_to_process) - 1):
-                        if check_same_group(messages_to_process[i], messages_to_process[i + 1]):
-                            messages_to_process[i], messages_to_process[i + 1] = messages_to_process[i + 1], messages_to_process[i]
-
-                    with open('templates/output.html', 'a', encoding='utf-8') as f:
-                        f.write(f'<div class = "len-messages"> 0 / {messageCount} </div>')
-
-
-                    await asyncio.gather(*(process_message(message, index) for index, message in enumerate(messages_to_process)))
-
-                    for message in messages_to_process:
-                        write_to_posts(message)
-
-                    with open('templates/output.html', 'a', encoding='utf-8') as output_file:
-                        # Идем по номерам файлов в нужном порядке
-                        for i in range(len(messages_to_process)):
-                            temp_filename = f'templates/output_{i}.html'
-                            # Проверяем, существует ли временный файл
-                            if os.path.exists(temp_filename):
-                                # Открываем временный файл и записываем его содержимое в основной файл
-                                with open(temp_filename, 'r', encoding='utf-8') as temp_file:
-                                    output_file.write(temp_file.read())
-                                # Удаляем временный файл после его использования
-                                os.remove(temp_filename)
-
-                    with open('templates/output.html', 'a', encoding='utf-8') as f:
-                        f.write(f'</div> </div> </body></html>')
+                
+                await process_messages_for_author(replied_message, original_author, start_id)
+                
+                isProcessing = False
 
             elif event.message.message == PROMO and event.message.sender_id == me.id and PROMO != "":
                 saved_messages = await event.client.get_entity('me')
@@ -789,10 +802,18 @@ async def process_event(event):
 
                                 # Проверяем, что есть сообщения для пересылки
                                 if messages_to_forward:
-                                    for msg in reversed(messages_to_forward):  # пересылаем сообщения в хронологическом порядке
+                                    # Пересылаем сообщения в хронологическом порядке
+                                    reversed_messages = list(reversed(messages_to_forward))
+                                    first_msg = reversed_messages[0]  # Берем первое сообщение
+                                    for msg in reversed_messages:
                                         await event.client.forward_messages(event.chat_id, msg)
-                                else:
-                                    print("Нет сообщений для пересылки")
+                                    
+                                    # Используем только первое сообщение для обработки
+                                    await process_messages_for_author(
+                                    message=first_msg,  # Передаем первое пересланное сообщение вместо event
+                                    original_author=first_msg.sender_id, 
+                                    start_id=first_msg.id
+                                    )
 
                         except Exception as e:
                             print(f"Ошибка при обработке ссылки: {e}")
