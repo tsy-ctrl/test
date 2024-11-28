@@ -811,7 +811,7 @@ async def process_event(event):
                                     # Используем только первое сообщение для обработки
                                     await process_messages_for_author(
                                     message=first_msg,  # Передаем первое пересланное сообщение вместо event
-                                    original_author=first_msg.sender_id, 
+                                    original_author=event.chat_id, 
                                     start_id=first_msg.id
                                     )
 
