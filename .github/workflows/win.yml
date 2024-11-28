@@ -3,7 +3,7 @@ name: Build Windows App
 on:
   push:
     branches:
-      - main  # Запускать сборку при пуше в ветку main
+      - main   # Запускать сборку при пуше в ветку main
 
 jobs:
   build:
