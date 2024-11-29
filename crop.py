@@ -521,9 +521,32 @@ def write_to_posts(message):
 
 isProcessing = False
 
-async def process_messages_for_author(message, original_author, start_id):
+async def process_messages_for_author(
+    message, 
+    original_author, 
+    start_id, 
+    event=None, 
+    client_to_use=None, 
+    chat_id_to_use=None,
+    chat_user=None,
+    nickname=None
+):
+    
     global last_author
     global isProcessing
+
+    # Определение клиента и chat_id
+    if client_to_use is None:
+        if event is not None:
+            client_to_use = event.client
+        else:
+            client_to_use = message.client
+    
+    if chat_id_to_use is None:
+        if event is not None:
+            chat_id_to_use = event.chat_id
+        else:
+            chat_id_to_use = message.chat_id
 
     # Reset folder if author changed
     if original_author != last_author:
@@ -534,20 +557,26 @@ async def process_messages_for_author(message, original_author, start_id):
             delete_files_py()
 
     last_author = original_author
-    user = await message.client.get_entity(original_author)
+    chat_user = ""
+    
     try:
-        await message.client(AddContactRequest(
+        # Попытка получить сущность пользователя и добавить в контакты
+        user = await client_to_use.get_entity(original_author)
+        await client_to_use(AddContactRequest(
             id=user.id,
             first_name=user.first_name if hasattr(user, 'first_name') and user.first_name is not None else '',
             last_name=user.last_name if hasattr(user, 'last_name') and user.last_name is not None else '',
             phone=user.phone if hasattr(user, 'phone') and user.phone is not None else '',
             add_phone_privacy_exception=False
         ))
+        
+        # Получение информации о чате
+        chat_user = await client_to_use.get_entity(chat_id_to_use)
     except: 
         pass
 
-    chat_user = await message.client.get_entity(message.chat_id)
-    nickname = ' '.join(chat_user.first_name.split()[:2]) if hasattr(chat_user, 'first_name') else 'Unknown'
+    if nickname is None:
+        nickname = ' '.join(chat_user.first_name.split()[:2]) if hasattr(chat_user, 'first_name') else 'Unknown'
 
     # Reset files
     with open(os.path.join('..', 'files', 'posts.txt'), 'w', encoding='utf-8'):
@@ -576,7 +605,7 @@ async def process_messages_for_author(message, original_author, start_id):
             <div id="button-text">0</div>
             <div id="button-del">Del</div>
             </div>
-            <button id="send-button" onclick="sendFiles(`{message.chat_id}`, `{get_client_id(message.client)}`, event)">Send Files</button>
+            <button id="send-button" onclick="sendFiles(`{chat_id_to_use}`, `{get_client_id(client_to_use)}`, event)">Send Files</button>
             <div>
              <button id="open-folder-button" onclick="openFolder()">Open Folder</button>
              <button id="copy-files-button" onclick="copyFiles()">Copy Files</button>
@@ -594,7 +623,7 @@ async def process_messages_for_author(message, original_author, start_id):
 
         messages_to_process = []
         messageCount = 0
-        async for msg in message.client.iter_messages(message.chat_id, min_id=start_id-1, reverse=True):
+        async for msg in client_to_use.iter_messages(chat_id_to_use, min_id=start_id-1, reverse=True):
             if msg.sender_id != original_author or not msg.media:
                 break
             if (msg.text and '@' in msg.text):
@@ -628,6 +657,7 @@ async def process_messages_for_author(message, original_author, start_id):
         with open('templates/output.html', 'a', encoding='utf-8') as f:
             f.write(f'</div> </div> </body></html>')
 
+            
 async def process_event(event):
     try:
         global last_author
@@ -793,7 +823,6 @@ async def process_event(event):
                                 messages_to_forward = []
                                 try:
                                     async for message in event.client.iter_messages(channel_entity):
-                                        # Проверяем, что сообщение не является служебным
                                         if not isinstance(message, telethon.tl.patched.MessageService):
                                             messages_to_forward.append(message)
                                 except Exception as e:
@@ -801,19 +830,31 @@ async def process_event(event):
                                     return
 
                                 # Проверяем, что есть сообщения для пересылки
+                                # Проверяем, что есть сообщения для пересылки
                                 if messages_to_forward:
                                     # Пересылаем сообщения в хронологическом порядке
                                     reversed_messages = list(reversed(messages_to_forward))
-                                    first_msg = reversed_messages[0]  # Берем первое сообщение
-                                    for msg in reversed_messages:
-                                        await event.client.forward_messages(event.chat_id, msg)
                                     
-                                    # Используем только первое сообщение для обработки
+                                    # Пересылаем сообщения и получаем их новые ID
+                                    forwarded_messages = await event.client.forward_messages(event.chat_id, reversed_messages)
+                                    
+                                    # Берем первое пересланное сообщение
+                                    first_forwarded_msg = forwarded_messages[0]
+                                    
+                                    chat_user = await event.client.get_entity(event.chat_id)
+                                    nickname = ' '.join(chat_user.first_name.split()[:2]) if hasattr(chat_user, 'first_name') else 'Unknown'
+                                    
                                     await process_messages_for_author(
-                                    message=first_msg,  # Передаем первое пересланное сообщение вместо event
-                                    original_author=event.chat_id, 
-                                    start_id=first_msg.id
+                                        message=first_forwarded_msg, 
+                                        original_author=first_forwarded_msg.sender_id,  
+                                        start_id=first_forwarded_msg.id,
+                                        event=event,
+                                        client_to_use=event.client,
+                                        chat_id_to_use=event.chat_id,
+                                        chat_user=chat_user,
+                                        nickname=nickname     
                                     )
+
 
                         except Exception as e:
                             print(f"Ошибка при обработке ссылки: {e}")
