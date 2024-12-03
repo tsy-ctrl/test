@@ -244,6 +244,30 @@ def check_files():
     files = len(glob.glob(os.path.join(folder, '*')))
     return {'files': files}
 
+@app.route('/update_hints', methods=['POST'])
+def update_hints():
+    data = request.json
+    chat_id = data.get('chat_id')
+    hint_key = data.get('hint_key')
+    
+    try:
+        # Читаем существующий файл
+        with open(os.path.join('..', 'files', 'hints.json'), 'r') as f:
+            hints_data = json.load(f)
+        
+        # Обновляем checkbox для конкретного chat_id
+        if str(chat_id) in hints_data:
+            hints_data[str(chat_id)]['checkbox'] = hint_key
+        
+        # Записываем обратно в файл
+        with open(os.path.join('..', 'files', 'hints.json'), 'w') as f:
+            json.dump(hints_data, f, indent=4)
+        
+        return jsonify({"status": "success", "hint_key": hint_key})
+    
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 executor = ThreadPoolExecutor(max_workers=1)
 
 @app.route('/')
@@ -532,6 +556,9 @@ async def process_messages_for_author(
     nickname=None
 ):
     
+    with open('./id/id.txt', 'w') as id_file:
+                id_file.write(str(event.chat_id))
+    
     global last_author
     global isProcessing
 
@@ -548,7 +575,7 @@ async def process_messages_for_author(
         else:
             chat_id_to_use = message.chat_id
 
-    # Reset folder if author changed
+
     if original_author != last_author:
         folder_path = "./images"
         for filename in os.listdir(folder_path):
@@ -653,9 +680,109 @@ async def process_messages_for_author(
                         output_file.write(temp_file.read())
                     # Удаляем временный файл после его использования
                     os.remove(temp_filename)
+            
+            hints_path = os.path.join('..', 'files', 'hints.json')
+            try:
+                with open(hints_path, 'r', encoding='utf-8') as hints_file:
+                    hints_data = json.load(hints_file)
+                
+                # Используем nickname или chat_id в качестве ключа
+                chat_hints = hints_data.get(str(chat_id_to_use), {})
+                old_checkbox = chat_hints.get('checkbox', '')
 
-        with open('templates/output.html', 'a', encoding='utf-8') as f:
-            f.write(f'</div> </div> </body></html>')
+                if 'now' in chat_hints:
+                    new_chat_hints = {}
+                    for key, value in chat_hints.items():
+                        # Пропускаем служебные ключи
+                        if key in ['now']:
+                            new_chat_hints[key] = value
+                            continue
+                        
+                        # Разделяем значения по пробелу
+                        parts = str(key).split()
+                        
+                        if len(parts) >= 2:
+                            if chat_hints['now'] == False:
+                                parts[1] = str(messageCount * 2)
+                            else:
+                                parts[1] = str(messageCount)
+                            new_key = ' '.join(parts)
+                            new_chat_hints[new_key] = value
+
+                    # Обновление чекбокса после создания всех новых ключей
+                    if old_checkbox:
+                        old_parts = old_checkbox.split()
+                        if len(old_parts) >= 1:
+                            # Ищем новый ключ, соответствующий старому чекбоксу
+                            for new_key in new_chat_hints.keys():
+                                new_parts = new_key.split()
+                                if len(new_parts) >= 1 and ' '.join(old_parts[:-1]) == ' '.join(new_parts[:-1]):
+                                    new_chat_hints['checkbox'] = new_key
+                                    break
+                    
+                    # Если чекбокс не обновлен, выбираем первый новый ключ
+                    if 'checkbox' not in new_chat_hints or not new_chat_hints.get('checkbox'):
+                        non_service_keys = [key for key in new_chat_hints.keys() if key not in ['now']]
+                        if non_service_keys:
+                            new_chat_hints['checkbox'] = non_service_keys[0]
+
+                    # Заменяем chat_hints полностью
+                    chat_hints = new_chat_hints
+
+                # Если нет выбранного чекбокса по умолчанию, выбираем самый частый
+                if 'checkbox' not in chat_hints or not chat_hints.get('checkbox'):
+                    # Находим самый частый элемент среди ключей (исключая служебные)
+                    hint_counts = {}
+                    for key in chat_hints.keys():
+                        if key not in ['checkbox', 'now'] and isinstance(key, str):
+                            # Извлекаем основное название без номера
+                            base_key = ' '.join(key.split()[:-1]) if len(key.split()) > 1 else key
+                            hint_counts[base_key] = hint_counts.get(base_key, 0) + 1
+                    
+                    # Выбираем самый частый элемент
+                    if hint_counts:
+                        most_frequent_hint = max(hint_counts, key=hint_counts.get)
+                        chat_hints['checkbox'] = most_frequent_hint
+
+                # Обновляем данные для конкретного chat_id
+                hints_data[str(chat_id_to_use)] = chat_hints
+                
+                # Сохраняем обновленные данные обратно в файл
+                with open(hints_path, 'w', encoding='utf-8') as hints_file:
+                    json.dump(hints_data, hints_file, ensure_ascii=False, indent=4)
+                
+                default_hint = chat_hints.get('checkbox', '')
+                sorted_hints = sorted(
+                    [key for key in chat_hints.keys() if key not in ['checkbox', 'now'] and isinstance(key, str)], 
+                    key=lambda x: x == default_hint, 
+                    reverse=True
+                )
+                
+                # Создаем контейнер только если есть подсказки
+                if sorted_hints:
+                    hints_html = '<div id="hints-container" class="hints-container">'
+                
+                    for hint_key in sorted_hints:
+                        is_checked = hint_key == default_hint
+                        checked_attr = 'checked' if is_checked else ''
+                        active_class = 'active' if is_checked else ''
+                        
+                        hints_html += f'''
+                        <div class="hint-item {active_class}">
+                            <input type="checkbox" 
+                                id="checkbox-{hint_key}" 
+                                {checked_attr} 
+                                onchange="updateHintCheckbox('{chat_id_to_use}', '{hint_key}')"
+                                class="hint-checkbox">
+                            <label for="checkbox-{hint_key}" class="hint-label">{hint_key}</label>
+                        </div>
+                        '''
+                    
+                    hints_html += '</div>'
+                    output_file.write(hints_html)
+
+            except Exception as e:
+                output_file.write(f'<div class="error-message">Error loading hints: {str(e)}</div>')
 
             
 async def process_event(event):
@@ -672,7 +799,7 @@ async def process_event(event):
                 start_id = replied_message.id
                 original_author = replied_message.sender_id
                 
-                await process_messages_for_author(replied_message, original_author, start_id)
+                await process_messages_for_author(replied_message, original_author, start_id, event)
                 
                 isProcessing = False
 
@@ -830,7 +957,6 @@ async def process_event(event):
                                     return
 
                                 # Проверяем, что есть сообщения для пересылки
-                                # Проверяем, что есть сообщения для пересылки
                                 if messages_to_forward:
                                     # Пересылаем сообщения в хронологическом порядке
                                     reversed_messages = list(reversed(messages_to_forward))
@@ -864,20 +990,34 @@ async def process_event(event):
             isProcessing = False
             print(e)
 
+def parse_proxy_url(proxy_url):
+    if not proxy_url:
+        return None
+
+    try:
+        parsed_proxy = urlparse(proxy_url)
+        
+        # Проверка обязательных параметров
+        if not all([parsed_proxy.scheme, parsed_proxy.hostname, parsed_proxy.port]):
+            print("Некорректный формат URL прокси")
+            return None
+
+        proxy = {
+            'proxy_type': parsed_proxy.scheme,
+            'addr': parsed_proxy.hostname,
+            'port': int(parsed_proxy.port),
+            'username': parsed_proxy.username or None,
+            'password': parsed_proxy.password or None,
+        }
+        print(f"Proxy: {proxy}")
+        return proxy
+    except Exception as e:
+        print(f"Ошибка при обработке прокси: {e}")
+        return None
+
+# Использование
 proxy_url = os.getenv('PROXY')
-proxy = None
-
-if proxy_url:
-    parsed_proxy = urlparse(proxy_url)
-    proxy = {
-        'proxy_type': parsed_proxy.scheme,
-        'addr': parsed_proxy.hostname,
-        'port': int(parsed_proxy.port) if parsed_proxy.port else None,
-        'username': parsed_proxy.username,
-        'password': parsed_proxy.password,
-    }
-
-print(f"Proxy: {proxy}")
+proxy = parse_proxy_url(proxy_url)
 
 async def create_client(phone, api_id, api_hash):
     client = TelegramClient(f'session_{phone}', api_id, api_hash, proxy=proxy)
@@ -978,21 +1118,18 @@ def validate_time_based_key(provided_key: str, timestamp: str) -> bool:
 
 if __name__ == '__main__':
     try:
-        # Проверяем количество аргументов
+
         if len(sys.argv) < 3:
             print("Запустите скрипт через main.")
             sys.exit(1)
 
-        # Получаем ключ и временную метку из аргументов
         provided_key = sys.argv[1]
         timestamp = sys.argv[2]
 
-        # Проверяем валидность ключа
         if not validate_time_based_key(provided_key, timestamp):
             print("...")
             sys.exit(1)
 
-        # Запускаем Flask в отдельном потоке
         flask_thread = threading.Thread(target=run_flask_app)
         flask_thread.daemon = True
         flask_thread.start()
