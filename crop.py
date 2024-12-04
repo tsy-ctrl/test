@@ -249,7 +249,8 @@ def update_hints():
    chat_id = data.get('chat_id')
    hint_key = data.get('hint_key')
    action = data.get('action', 'update')
-   
+
+
    try:
        with open(os.path.join('..', 'files', 'hints.json'), 'r') as f:
            hints_data = json.load(f)
@@ -298,6 +299,50 @@ def update_hints():
    
    except Exception as e:
        return jsonify({"status": "error", "message": str(e)}), 500
+   
+
+@app.route('/add-hint', methods=['POST'])
+def add_hint():
+    data = request.json
+    chat_id = data.get('chat_id')
+    new_hint_key = data.get('hint_key')
+    message_count = int(data.get('message_count', 0)) 
+    
+    hints_path = os.path.join('..', 'files', 'hints.json')
+    
+    try:
+        with open(hints_path, 'r', encoding='utf-8') as hints_file:
+            hints_data = json.load(hints_file)
+        
+        chat_id_str = str(chat_id)
+        
+        if chat_id_str not in hints_data:
+            hints_data[chat_id_str] = {'now': False}
+        
+        # Используем переданный message_count с логикой удвоения
+        new_message_count = message_count * 2 if not hints_data[chat_id_str].get('now', False) else message_count
+        
+        # Формируем полный ключ
+        new_hint_value = f"{new_hint_key} {new_message_count}"
+        hints_data[chat_id_str][new_hint_value] = 0
+        
+        # Обновляем checkbox, если нет
+        if 'checkbox' not in hints_data[chat_id_str] or not hints_data[chat_id_str].get('checkbox'):
+            non_service_keys = [key for key in hints_data[chat_id_str].keys() if key not in ['now', 'checkbox']]
+            if non_service_keys:
+                hints_data[chat_id_str]['checkbox'] = non_service_keys[0]
+        
+        with open(hints_path, 'w', encoding='utf-8') as hints_file:
+            json.dump(hints_data, hints_file, ensure_ascii=False, indent=4)
+        
+        return jsonify({
+            "success": True, 
+            "full_hint_key": new_hint_value  # Возвращаем полный ключ
+        })
+    
+    except Exception as e:
+        print(e)
+        return jsonify({"success": False, "message": str(e)})
     
 
 executor = ThreadPoolExecutor(max_workers=1)
@@ -765,16 +810,30 @@ async def process_messages_for_author(
                     key=lambda x: x == default_hint, 
                     reverse=True
                 )
+
+                hints_html = f'''
+                        <button id="add-hint-btn">+</button>
+                        <div id="hint-modal" class="modal hidden">
+                            <div class="modal-content">
+                                <input type="text" autocomplete="off" id="hint-input" placeholder="Input time (without post count)">
+                                <div class="btn-wrapper">
+                                <button id="save-hint-btn" onclick="saveHint('{chat_id_to_use}', '{messageCount}')">Save</button>
+                                <button id="close-modal-btn">Close</button>
+                                </div>
+                            </div>
+                        </div>
+                        '''
                 
                 if sorted_hints:
-                        hints_html = '''<div id="hints-container" class="hints-container">
+                        hints_html += f'''
+                        <div id="hints-container" class="hints-container">
                         <div class="info-tooltip-container">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="info-icon">
                                 <circle cx="12" cy="12" r="10"></circle>
                                 <line x1="12" y1="16" x2="12" y2="12"></line>
                                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
                             </svg>
-                            <div class="tooltip-text">Press enter in main to make a post with chosen time</div>
+                            <div class="tooltip-text">Press enter in "main" script to make a post with chosen time. Press + to add new time</div>
                         </div>
                         '''
                     
@@ -804,14 +863,14 @@ async def process_messages_for_author(
                                         <path fill="#b5c4e0" d="M11,17v2a3,3,0,0,0,3,3H38L37,55H47l5-38Z"></path>
                                         <path fill="#8d6c9f" d="M16 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 16 10zM11 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 11 10zM21 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 21 10zM26 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 26 10zM31 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 31 10zM36 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 36 10zM41 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 41 10zM46 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 46 10zM51 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 51 10z"></path>
                                         <path fill="#8d6c9f" d="M53,6H9A3,3,0 0 0 6 9v6a3,3 0 0 0 3 3c0,.27 4.89 36.22 4.89 36.22A3 3 0 0 0 15 60H47a3,3 0 0 0 1.11 -5.78l2.28 -17.3a1 1 0 0 0 .06 -.47L52.92 18H53a3,3 0 0 0 3 -3V9A3,3 0 0 0 53 6ZM24.59 18l5 5 -4.78 4.78a1 1 0 1 0 1.41 1.41L31 24.41 37.59 31 31 37.59l-7.29 -7.29h0l-5.82 -5.82a1 1 0 0 0 -1.41 1.41L21.59 31l-7.72 7.72L12.33 27.08 21.41 18Zm16 0 3.33 3.33a1 1 0 0 0 1.41 -1.41L43.41 18h7.17L39 29.59 32.41 23l5 -5Zm-11 21L23 45.59l-5.11 -5.11a1 1 0 0 0 -1.41 1.41L21.59 47l-5.86 5.86L14.2 41.22l8.8 -8.8Zm7.25 4.42L32.41 39 39 32.41l5.14 5.14a1 1 0 0 0 1.41 -1.41L40.41 31 47 24.41l2.67 2.67 -1.19 9L38.3 46.28h0L31 53.59 24.41 47 31 40.41l4.42 4.42a1 1 0 0 0 1.41 -1.41ZM23 48.41 28.59 54H17.41Zm16 0L44.59 54H33.41ZM40.41 47 48 39.37 46.27 52.86ZM50 24.58 48.41 23l2.06 -2.06Zm-19 -3L27.41 18h7.17Zm-19.47 -.64L13.59 23 12 24.58Zm3.47 .64L11.41 18h7.17ZM47 58H15a1,1 0 0 1 0 -2H47a1,1 0 0 1 0 2Zm7 -43a1,1 0 0 1 -1 1H9a1,1 0 0 1 -1 -1V9A1,1 0 0 1 9 8H53a1,1 0 0 1 1 1Z"></path>
-                                    </svg>
+                                        </svg>
                                     </button>
                                 </div>
                             </div>
                             '''
                         
-                        hints_html += '</div>'
-                        output_file.write(hints_html)
+                hints_html += '</div>'
+                output_file.write(hints_html)
 
             except Exception as e:
                 output_file.write(f'<div class="error-message">Error loading hints: {str(e)}</div>')
@@ -1150,6 +1209,7 @@ def validate_time_based_key(provided_key: str, timestamp: str) -> bool:
 
 if __name__ == '__main__':
     try:
+
         if len(sys.argv) < 3:
             print("Запустите скрипт через main.")
             sys.exit(1)
