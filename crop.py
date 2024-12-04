@@ -205,8 +205,7 @@ def delete_files():
         return jsonify(message='All files deleted')
     except Exception:
         return jsonify()
-
-
+    
 switch = False
 
 def update_html(switch):
@@ -246,27 +245,60 @@ def check_files():
 
 @app.route('/update_hints', methods=['POST'])
 def update_hints():
-    data = request.json
-    chat_id = data.get('chat_id')
-    hint_key = data.get('hint_key')
+   data = request.json
+   chat_id = data.get('chat_id')
+   hint_key = data.get('hint_key')
+   action = data.get('action', 'update')
+   
+   try:
+       with open(os.path.join('..', 'files', 'hints.json'), 'r') as f:
+           hints_data = json.load(f)
+       
+       if str(chat_id) in hints_data:
+           # If delete action, remove the specific hint key
+           if action == 'delete':
+               # Remove the specific hint key
+               if hint_key in hints_data[str(chat_id)]:
+                   del hints_data[str(chat_id)][hint_key]
+               
+               # Find non-service keys
+               non_service_keys = [key for key in hints_data[str(chat_id)].keys() 
+                                   if key not in ['checkbox', 'now']]
+               
+               # If no non-service keys remain, clear the chat_id entry
+               if not non_service_keys:
+                   hints_data[str(chat_id)] = {'now': hints_data[str(chat_id)].get('now', False)}
+               else:
+                   # If deleted key was the checkbox, update checkbox
+                   if hints_data[str(chat_id)].get('checkbox') == hint_key:
+                       # Choose the first non-service key as new checkbox
+                       hints_data[str(chat_id)]['checkbox'] = non_service_keys[0]
+           
+           # For update action, just update the checkbox
+           elif action == 'update':
+               hints_data[str(chat_id)]['checkbox'] = hint_key
+       
+       # Write back to file
+       with open(os.path.join('..', 'files', 'hints.json'), 'w') as f:
+           json.dump(hints_data, f, indent=4, ensure_ascii=False)
+       
+       # Check if entry is now essentially empty
+       if str(chat_id) in hints_data and len(hints_data[str(chat_id)]) <= 1:
+           return jsonify({
+               "status": "empty", 
+               "hint_key": hint_key, 
+               "action": action
+           })
+       
+       return jsonify({
+           "status": "success", 
+           "hint_key": hint_key, 
+           "action": action
+       })
+   
+   except Exception as e:
+       return jsonify({"status": "error", "message": str(e)}), 500
     
-    try:
-        # Читаем существующий файл
-        with open(os.path.join('..', 'files', 'hints.json'), 'r') as f:
-            hints_data = json.load(f)
-        
-        # Обновляем checkbox для конкретного chat_id
-        if str(chat_id) in hints_data:
-            hints_data[str(chat_id)]['checkbox'] = hint_key
-        
-        # Записываем обратно в файл
-        with open(os.path.join('..', 'files', 'hints.json'), 'w') as f:
-            json.dump(hints_data, f, indent=4)
-        
-        return jsonify({"status": "success", "hint_key": hint_key})
-    
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
 
 executor = ThreadPoolExecutor(max_workers=1)
 
@@ -685,7 +717,6 @@ async def process_messages_for_author(
             try:
                 with open(hints_path, 'r', encoding='utf-8') as hints_file:
                     hints_data = json.load(hints_file)
-                
                 # Используем nickname или chat_id в качестве ключа
                 chat_hints = hints_data.get(str(chat_id_to_use), {})
                 old_checkbox = chat_hints.get('checkbox', '')
@@ -708,41 +739,14 @@ async def process_messages_for_author(
                                 parts[1] = str(messageCount)
                             new_key = ' '.join(parts)
                             new_chat_hints[new_key] = value
-
-                    # Обновление чекбокса после создания всех новых ключей
-                    if old_checkbox:
-                        old_parts = old_checkbox.split()
-                        if len(old_parts) >= 1:
-                            # Ищем новый ключ, соответствующий старому чекбоксу
-                            for new_key in new_chat_hints.keys():
-                                new_parts = new_key.split()
-                                if len(new_parts) >= 1 and ' '.join(old_parts[:-1]) == ' '.join(new_parts[:-1]):
-                                    new_chat_hints['checkbox'] = new_key
-                                    break
                     
-                    # Если чекбокс не обновлен, выбираем первый новый ключ
-                    if 'checkbox' not in new_chat_hints or not new_chat_hints.get('checkbox'):
+                    if old_checkbox not in new_chat_hints or not new_chat_hints.get('checkbox'):
                         non_service_keys = [key for key in new_chat_hints.keys() if key not in ['now']]
                         if non_service_keys:
                             new_chat_hints['checkbox'] = non_service_keys[0]
 
                     # Заменяем chat_hints полностью
                     chat_hints = new_chat_hints
-
-                # Если нет выбранного чекбокса по умолчанию, выбираем самый частый
-                if 'checkbox' not in chat_hints or not chat_hints.get('checkbox'):
-                    # Находим самый частый элемент среди ключей (исключая служебные)
-                    hint_counts = {}
-                    for key in chat_hints.keys():
-                        if key not in ['checkbox', 'now'] and isinstance(key, str):
-                            # Извлекаем основное название без номера
-                            base_key = ' '.join(key.split()[:-1]) if len(key.split()) > 1 else key
-                            hint_counts[base_key] = hint_counts.get(base_key, 0) + 1
-                    
-                    # Выбираем самый частый элемент
-                    if hint_counts:
-                        most_frequent_hint = max(hint_counts, key=hint_counts.get)
-                        chat_hints['checkbox'] = most_frequent_hint
 
                 # Обновляем данные для конкретного chat_id
                 hints_data[str(chat_id_to_use)] = chat_hints
@@ -753,33 +757,61 @@ async def process_messages_for_author(
                 
                 default_hint = chat_hints.get('checkbox', '')
                 sorted_hints = sorted(
-                    [key for key in chat_hints.keys() if key not in ['checkbox', 'now'] and isinstance(key, str)], 
+                    [key for key in chat_hints.keys() 
+                    if key not in ['checkbox', 'now'] 
+                    and isinstance(key, str) 
+                    and key in hints_data[str(chat_id_to_use)]  # Добавляем проверку существования ключа
+                    ], 
                     key=lambda x: x == default_hint, 
                     reverse=True
                 )
                 
-                # Создаем контейнер только если есть подсказки
                 if sorted_hints:
-                    hints_html = '<div id="hints-container" class="hints-container">'
-                
-                    for hint_key in sorted_hints:
-                        is_checked = hint_key == default_hint
-                        checked_attr = 'checked' if is_checked else ''
-                        active_class = 'active' if is_checked else ''
-                        
-                        hints_html += f'''
-                        <div class="hint-item {active_class}">
-                            <input type="checkbox" 
-                                id="checkbox-{hint_key}" 
-                                {checked_attr} 
-                                onchange="updateHintCheckbox('{chat_id_to_use}', '{hint_key}')"
-                                class="hint-checkbox">
-                            <label for="checkbox-{hint_key}" class="hint-label">{hint_key}</label>
+                        hints_html = '''<div id="hints-container" class="hints-container">
+                        <div class="info-tooltip-container">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="info-icon">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="16" x2="12" y2="12"></line>
+                                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                            </svg>
+                            <div class="tooltip-text">Press enter in main to make a post with chosen time</div>
                         </div>
                         '''
                     
-                    hints_html += '</div>'
-                    output_file.write(hints_html)
+                        for hint_key in sorted_hints:
+                            is_checked = hint_key == default_hint
+                            checked_attr = 'checked' if is_checked else ''
+                            active_class = 'active' if is_checked else ''
+                            
+                            hints_html += f'''
+                            <div class="hint-item {active_class}">
+                                <div class="hint-wrapper">
+                                    <input type="checkbox" 
+                                        id="checkbox-{hint_key}" 
+                                        {checked_attr} 
+                                        onchange="updateHintCheckbox('{chat_id_to_use}', '{hint_key}')"
+                                        class="hint-checkbox">
+                                    <label for="checkbox-{hint_key}" class="hint-label">{hint_key}</label>
+                                    <button 
+                                        class="hint-delete-btn" 
+                                        onclick="deleteHint('{chat_id_to_use}', '{hint_key}')"
+                                        aria-label="Delete hint">
+                                        <svg xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="32" height="32" viewBox="0 0 64 64">
+                                        <rect width="48" height="10" x="7" y="7" fill="#f9e3ae" rx="2" ry="2"></rect>
+                                        <rect width="36" height="4" x="13" y="55" fill="#f9e3ae" rx="2" ry="2"></rect>
+                                        <path fill="#c2cde7" d="M47 55L15 55 10 17 52 17 47 55z"></path>
+                                        <path fill="#ced8ed" d="M25 55L15 55 10 17 24 17 25 55z"></path>
+                                        <path fill="#b5c4e0" d="M11,17v2a3,3,0,0,0,3,3H38L37,55H47l5-38Z"></path>
+                                        <path fill="#8d6c9f" d="M16 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 16 10zM11 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 11 10zM21 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 21 10zM26 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 26 10zM31 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 31 10zM36 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 36 10zM41 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 41 10zM46 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 46 10zM51 10a1 1 0 0 0-1 1v2a1 1 0 0 0 2 0V11A1 1 0 0 0 51 10z"></path>
+                                        <path fill="#8d6c9f" d="M53,6H9A3,3,0 0 0 6 9v6a3,3 0 0 0 3 3c0,.27 4.89 36.22 4.89 36.22A3 3 0 0 0 15 60H47a3,3 0 0 0 1.11 -5.78l2.28 -17.3a1 1 0 0 0 .06 -.47L52.92 18H53a3,3 0 0 0 3 -3V9A3,3 0 0 0 53 6ZM24.59 18l5 5 -4.78 4.78a1 1 0 1 0 1.41 1.41L31 24.41 37.59 31 31 37.59l-7.29 -7.29h0l-5.82 -5.82a1 1 0 0 0 -1.41 1.41L21.59 31l-7.72 7.72L12.33 27.08 21.41 18Zm16 0 3.33 3.33a1 1 0 0 0 1.41 -1.41L43.41 18h7.17L39 29.59 32.41 23l5 -5Zm-11 21L23 45.59l-5.11 -5.11a1 1 0 0 0 -1.41 1.41L21.59 47l-5.86 5.86L14.2 41.22l8.8 -8.8Zm7.25 4.42L32.41 39 39 32.41l5.14 5.14a1 1 0 0 0 1.41 -1.41L40.41 31 47 24.41l2.67 2.67 -1.19 9L38.3 46.28h0L31 53.59 24.41 47 31 40.41l4.42 4.42a1 1 0 0 0 1.41 -1.41ZM23 48.41 28.59 54H17.41Zm16 0L44.59 54H33.41ZM40.41 47 48 39.37 46.27 52.86ZM50 24.58 48.41 23l2.06 -2.06Zm-19 -3L27.41 18h7.17Zm-19.47 -.64L13.59 23 12 24.58Zm3.47 .64L11.41 18h7.17ZM47 58H15a1,1 0 0 1 0 -2H47a1,1 0 0 1 0 2Zm7 -43a1,1 0 0 1 -1 1H9a1,1 0 0 1 -1 -1V9A1,1 0 0 1 9 8H53a1,1 0 0 1 1 1Z"></path>
+                                    </svg>
+                                    </button>
+                                </div>
+                            </div>
+                            '''
+                        
+                        hints_html += '</div>'
+                        output_file.write(hints_html)
 
             except Exception as e:
                 output_file.write(f'<div class="error-message">Error loading hints: {str(e)}</div>')
@@ -1118,7 +1150,6 @@ def validate_time_based_key(provided_key: str, timestamp: str) -> bool:
 
 if __name__ == '__main__':
     try:
-
         if len(sys.argv) < 3:
             print("Запустите скрипт через main.")
             sys.exit(1)
