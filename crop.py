@@ -819,7 +819,7 @@ async def process_messages_for_author(
                         <button id="add-hint-btn">+</button>
                         <div id="hint-modal" class="modal hidden">
                             <div class="modal-content">
-                                <input type="text" autocomplete="off" id="hint-input" placeholder="Input time (without post count)">
+                                <input type="text" autocomplete="off" id="hint-input" placeholder="Input time: ">
                                 <div class="btn-wrapper">
                                 <button id="save-hint-btn" onclick="saveHint('{chat_id_to_use}', '{messageCount}')">Save</button>
                                 <button id="close-modal-btn">Close</button>
