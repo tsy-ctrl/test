@@ -319,11 +319,12 @@ def add_hint():
         if chat_id_str not in hints_data:
             hints_data[chat_id_str] = {'now': False}
         
-        # Используем переданный message_count с логикой удвоения
-        new_message_count = message_count * 2 if not hints_data[chat_id_str].get('now', False) else message_count
+        # Проверяем количество частей ключа
+        hint_parts = new_hint_key.split()
         
-        # Формируем полный ключ
-        new_hint_value = f"{new_hint_key} {new_message_count}"
+        # Если только одно слово, добавляем message_count
+        new_hint_value = f"{new_hint_key} {message_count}" if len(hint_parts) == 1 else new_hint_key
+        
         hints_data[chat_id_str][new_hint_value] = 0
         
         # Обновляем checkbox, если нет
