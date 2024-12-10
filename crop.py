@@ -1021,8 +1021,8 @@ async def process_messages_for_author(
                             </div>
                             '''
 
-                    hints_html += '</div>'
-                    output_file.write(hints_html)
+                hints_html += '</div>'
+                output_file.write(hints_html)
 
             except Exception as e:
                 output_file.write(f'<div class="error-message">Error loading hints: {str(e)}</div>')
