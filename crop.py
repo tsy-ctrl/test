@@ -187,7 +187,7 @@ def copy_files():
 def write_files():
     try: 
         data = request.get_json()
-        with open('sendInfo.json', 'w') as f:
+        with open('files/sendInfo.json', 'w') as f:
             json.dump(data, f)
         return jsonify(message='Sending files...')
     except Exception as e:
@@ -252,7 +252,7 @@ def update_hints():
 
    try:
        # Выбираем нужный путь в зависимости от типа подсказок
-       hints_path = os.path.join('..', 'files', 
+       hints_path = os.path.join('..', 'files', 'hints',
            'hints.json' if hint_type == 'personal' else 'allhints.json')
        
        # Для персональных подсказок нужен chat_id
@@ -287,7 +287,7 @@ def update_hints():
                     hints_data[str(chat_id)]['checkbox'] = hint_key
                     
                     # Очищаем checkbox в общих подсказках
-                    allhints_path = os.path.join('..', 'files', 'allhints.json')
+                    allhints_path = os.path.join('..', 'files', 'hints', 'allhints.json')
                     with open(allhints_path, 'r') as f:
                         allhints_data = json.load(f)
                     
@@ -314,7 +314,7 @@ def update_hints():
                hints_data['checkbox'] = hint_key
                
                # Если это общие подсказки, очищаем персональные checkbox
-               hints_hints_path = os.path.join('..', 'files', 'hints.json')
+               hints_hints_path = os.path.join('..', 'files', 'hints', 'hints.json')
                with open(hints_hints_path, 'r') as f:
                    hints_hints_data = json.load(f)
                
@@ -357,7 +357,7 @@ def add_hint():
     hint_type = data.get('hint_type', 'personal')  # personal или general
     
     # Выбираем путь в зависимости от типа
-    hints_path = os.path.join('..', 'files', 
+    hints_path = os.path.join('..', 'files', 'hints',
         'hints.json' if hint_type == 'personal' else 'allhints.json')
     
     try:
@@ -655,11 +655,11 @@ async def send_message(client_id, receiver_id, folder):
         for file in media_files:
             media.append(await client.upload_file(file))
         await client.send_file(receiver, media, album=True)
-        with open("sendInfo.json", "w") as f:
+        with open("files/sendInfo.json", "w") as f:
             f.write("")
     except Exception as e:
         print(e)
-        with open("sendInfo.json", "w") as f:
+        with open("files/sendInfo.json", "w") as f:
             f.write("")
         pass
 
@@ -667,7 +667,7 @@ async def check_file_and_send_message():
 
     while True:
         try:
-            with open("sendInfo.json", "r") as f:
+            with open("files/sendInfo.json", "r") as f:
                 data = f.read()
 
             if data:
@@ -839,8 +839,8 @@ async def process_messages_for_author(
                     # Удаляем временный файл после его использования
                     os.remove(temp_filename)
             
-            hints_path = os.path.join('..', 'files', 'hints.json')
-            allhints_path = os.path.join('..', 'files', 'allhints.json')
+            hints_path = os.path.join('..', 'files', 'hints', 'hints.json')
+            allhints_path = os.path.join('..', 'files', 'hints', 'allhints.json')
 
             try:
                 with open(hints_path, 'r', encoding='utf-8') as hints_file:
@@ -891,7 +891,7 @@ async def process_messages_for_author(
                 # Сохраняем обновленные данные обратно в файл
                 with open(hints_path, 'w', encoding='utf-8') as hints_file:
                     json.dump(hints_data, hints_file, ensure_ascii=False, indent=4)
-                1
+                
                 default_hint = chat_hints.get('checkbox', '')
                 sorted_hints = sorted(
                     [key for key in chat_hints.keys() 
