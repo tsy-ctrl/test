@@ -1198,14 +1198,47 @@ async def process_event(event):
                                 except Exception as e:
                                     print(f"Ошибка при получении сообщений из канала: {e}")
                                     return
+                                
+                                messages_to_forward = []
+                                try:
+                                    async for message in event.client.iter_messages(channel_entity):
+                                        if not isinstance(message, telethon.tl.patched.MessageService):
+                                            messages_to_forward.append(message)
+                                except Exception as e:
+                                    print(f"Ошибка при получении сообщений из канала: {e}")
+                                    return
+                                
+                                # Пересылаем сообщения из канала в текущий чат
+                                messages_to_forward = []
+                                try:
+                                    async for message in event.client.iter_messages(channel_entity):
+                                        if not isinstance(message, telethon.tl.patched.MessageService):
+                                            messages_to_forward.append(message)
+                                except Exception as e:
+                                    print(f"Ошибка при получении сообщений из канала: {e}")
+                                    return
 
                                 # Проверяем, что есть сообщения для пересылки
                                 if messages_to_forward:
                                     # Пересылаем сообщения в хронологическом порядке
                                     reversed_messages = list(reversed(messages_to_forward))
                                     
-                                    # Пересылаем сообщения и получаем их новые ID
-                                    forwarded_messages = await event.client.forward_messages(event.chat_id, reversed_messages)
+                                    # Находим индекс первого сообщения с текстом, @, и медиа
+                                    start_index = 0
+                                    for i, message in enumerate(reversed_messages):
+                                        if '@' in message.text and message.media:
+                                            start_index = i
+                                            break
+                                    
+                                    # Находим последний индекс сообщений с @ и медиа
+                                    end_index = len(reversed_messages)
+                                    for i in range(len(reversed_messages) - 1, start_index - 1, -1):
+                                        if '@' in reversed_messages[i].text and reversed_messages[i].media:
+                                            end_index = i + 1
+                                            break
+                                    
+                                    # Пересылаем сообщения от первого подходящего до последнего
+                                    forwarded_messages = await event.client.forward_messages(event.chat_id, reversed_messages[start_index:end_index])
                                     
                                     # Берем первое пересланное сообщение
                                     first_forwarded_msg = forwarded_messages[0]
@@ -1223,7 +1256,6 @@ async def process_event(event):
                                         chat_user=chat_user,
                                         nickname=nickname     
                                     )
-
 
                         except Exception as e:
                             print(f"Ошибка при обработке ссылки: {e}")
@@ -1361,7 +1393,6 @@ def validate_time_based_key(provided_key: str, timestamp: str) -> bool:
 
 if __name__ == '__main__':
     try:
-
         if len(sys.argv) < 3:
             print("Запустите скрипт через main.")
             sys.exit(1)
