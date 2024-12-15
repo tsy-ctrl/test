@@ -185,7 +185,9 @@ def copy_files():
 
 @app.route('/sendFiles', methods=['POST'])
 def write_files():
-    try: 
+    try:
+        global last_author
+        last_author = None
         data = request.get_json()
         with open('files/sendInfo.json', 'w') as f:
             json.dump(data, f)
@@ -322,11 +324,6 @@ def update_hints():
                for chat_id in hints_hints_data:
                    if 'checkbox' in hints_hints_data[chat_id]:
                        hints_hints_data[chat_id]['checkbox'] = ''
-               
-               # Сохраняем изменения в персональных подсказках
-               with open(hints_hints_path, 'w') as f:
-                   json.dump(hints_hints_data, f, indent=4, ensure_ascii=False)
-       
        # Сохраняем изменения
        with open(hints_path, 'w') as f:
            json.dump(hints_data, f, indent=4, ensure_ascii=False)
@@ -414,7 +411,7 @@ def add_hint():
         
         # Сохраняем изменения
         with open(hints_path, 'w', encoding='utf-8') as hints_file:
-            json.dump(hints_data, hints_file, ensure_ascii=False, indent=4)
+            json.dump(hints_data, hints_file, indent=4)
         
         return jsonify({
             "success": True, 
@@ -733,12 +730,12 @@ async def process_messages_for_author(
         else:
             chat_id_to_use = message.chat_id
 
-
+    print(original_author, last_author)
     if original_author != last_author:
         folder_path = "./images"
         for filename in os.listdir(folder_path):
             os.remove(os.path.join(folder_path, filename))
-        if switch:
+        if switch:  
             delete_files_py()
 
     last_author = original_author
@@ -859,6 +856,10 @@ async def process_messages_for_author(
                 old_checkbox = chat_hints.get('checkbox', '')
 
                 if 'now' in chat_hints:
+                    # Сначала найдем индекс текущего чекбокса
+                    non_service_keys = [key for key in chat_hints.keys() if key not in ['now', 'checkbox']]
+                    checkbox_index = non_service_keys.index(old_checkbox) if old_checkbox in non_service_keys else -1
+
                     new_chat_hints = {}
                     for key, value in chat_hints.items():
                         # Пропускаем служебные ключи
@@ -877,10 +878,12 @@ async def process_messages_for_author(
                             new_key = ' '.join(parts)
                             new_chat_hints[new_key] = value
                     
-                    if old_checkbox not in new_chat_hints or not new_chat_hints.get('checkbox'):
-                        non_service_keys = [key for key in new_chat_hints.keys() if key not in ['now']]
-                        if non_service_keys:
-                            new_chat_hints['checkbox'] = non_service_keys[0]
+                    # Обновим чекбокс, используя тот же индекс
+                    non_service_new_keys = [key for key in new_chat_hints.keys() if key not in ['now', 'checkbox']]
+                    if checkbox_index != -1 and checkbox_index < len(non_service_new_keys):
+                        new_chat_hints['checkbox'] = non_service_new_keys[checkbox_index]
+                    elif non_service_new_keys:
+                        new_chat_hints['checkbox'] = non_service_new_keys[0]
 
                     # Заменяем chat_hints полностью
                     chat_hints = new_chat_hints
@@ -890,7 +893,7 @@ async def process_messages_for_author(
                 
                 # Сохраняем обновленные данные обратно в файл
                 with open(hints_path, 'w', encoding='utf-8') as hints_file:
-                    json.dump(hints_data, hints_file, ensure_ascii=False, indent=4)
+                    json.dump(hints_data, hints_file, indent=4)
                 
                 default_hint = chat_hints.get('checkbox', '')
                 sorted_hints = sorted(
