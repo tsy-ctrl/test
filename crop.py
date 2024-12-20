@@ -12,6 +12,7 @@ import platform
 import re
 import time
 import hmac
+import random
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
@@ -587,10 +588,15 @@ async def process_message(message, message_index):
             img = Image.open(media_data)
             img = correct_orientation(img)
             width, height = img.size
+            left = random.randint(1, 5)
+            top = random.randint(1, 5)
+            right = width - random.randint(1, 5)
+            bottom = height - random.randint(1, 5)
 
-            cropped_img = img.crop((2, 2, width - 2, height - 2))
+            # Обрезаем изображение с полученными случайными границами
+            cropped_img = img.crop((left, top, right, bottom))
 
-            max_size = (900, 900)
+            max_size = (1000, 1000)
             cropped_img.thumbnail(max_size, Image.Resampling.LANCZOS)
 
             buffered = BytesIO()
@@ -730,7 +736,6 @@ async def process_messages_for_author(
         else:
             chat_id_to_use = message.chat_id
 
-    print(original_author, last_author)
     if original_author != last_author:
         folder_path = "./images"
         for filename in os.listdir(folder_path):
