@@ -136,6 +136,82 @@ def delete_files_py():
     except Exception as e:
         print(f"Произошла ошибка: {e}")
         return
+    
+import numpy as np
+
+def rotate_media_file(file_path, direction):
+
+    try:
+        file_ext = os.path.splitext(file_path)[1].lower()
+        
+        if file_ext in ['.jpg', '.jpeg', '.png']:
+            # Rotate static images
+            with Image.open(file_path) as img:
+                angle = -90 if direction == 'right' else 90
+                rotated = img.rotate(angle, expand=True)
+                rotated.save(file_path,quality=100)
+                
+        elif file_ext in ['.gif', '.mp4']:
+            # Rotate GIF and video files
+            clip = VideoFileClip(file_path)
+            angle = -90 if direction == 'right' else 90
+
+            # Extract the audio if present
+            audio = clip.audio
+
+            # Define a frame transformation function
+            def transform_frame(get_frame, t):
+                frame = get_frame(t)
+                return np.rot90(frame, k=1 if angle == 90 else 3, axes=(0, 1))
+            
+            rotated_clip = clip.transform(transform_frame)
+
+            # Add the extracted audio back if it exists
+            if audio:
+                rotated_clip = rotated_clip.with_audio(audio)
+
+            # Save the rotated video
+            if file_ext == '.gif':
+                rotated_clip.write_gif(file_path + '_rotated.gif', fps=clip.fps)
+            else:
+                temp_path = file_path + '.temp.mp4'
+                rotated_clip.write_videofile(
+                    temp_path,
+                    codec="libx264",
+                    audio_codec="aac",
+                    fps=clip.fps,
+                    preset="medium",
+                    ffmpeg_params=["-crf", "18"]  # High-quality setting
+                )
+
+                # Replace the original file
+                clip.close()
+                rotated_clip.close()
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                os.rename(temp_path, file_path)
+            
+        return True
+    except Exception as e:
+        print(f"Ошибка при повороте медиафайла: {e}")
+        return False
+    
+@app.route('/rotate-media', methods=['POST'])
+def rotate_media_endpoint():
+    data = request.json
+    file_path = data.get('filePath')
+    direction = data.get('direction')
+    media_type = data.get('mediaType')
+    
+    if not all([file_path, direction, media_type]):
+        return jsonify({'error': 'Missing parameters'}), 400
+        
+    success = rotate_media_file(file_path, direction)
+    
+    if success:
+        return jsonify({'status': 'success'})
+    else:
+        return jsonify({'error': 'Failed to rotate media'}), 500
 
 @app.route('/open-folder', methods=['POST'])
 def open_folder():
@@ -496,7 +572,7 @@ async def process_message(message, message_index):
             </script>
             """)
             return at_word
-
+    
     output_file = f'templates/output_{message_index}.html'
     output_main_file = f'templates/output.html'
     try:
@@ -526,13 +602,17 @@ async def process_message(message, message_index):
                         with open(output_video_path, 'rb') as video_file:
                             video_bytes = video_file.read()
                             video_base64 = base64.b64encode(video_bytes).decode()
-
+                        media_id = f'media_{uuid.uuid4().hex[:8]}'
                         with open(output_file, 'a', encoding='utf-8') as f:
                             f.write(f'<div style="position: relative; display: flex; flex-direction: column">')
-                            f.write(f'<video controls src="data:video/mp4;base64,{video_base64}" width="310"></video>')
+                            f.write(f'<video id="{media_id}" controls src="data:video/mp4;base64,{video_base64}" width="310"></video>')
                             f.write(f'<div class="image-number"></div>') 
-                            f.write(f'<span class="copy-button img" onclick="copyVideoToClipboard(`{output_video_path}`, event)">copy video</span>')
+                            f.write(f'<div class="media-controls">')
+                            f.write(f'<span class="rotate-button left" onclick="rotateMedia(\'{media_id}\', \'left\', \'{output_video_path}\', \'video\')">↺</span>')
+                            f.write(f'<span class="rotate-button right" onclick="rotateMedia(\'{media_id}\', \'right\', \'{output_video_path}\', \'video\')">↻</span>')
                             f.write('</div>')
+                            f.write('</div>')
+                            f.write(f'<span class="copy-button img" onclick="copyVideoToClipboard(`{output_video_path}`, event)">copy video</span>')
 
                         if message.text:
                             write_to_output(message, output_file, output_main_file)
@@ -566,13 +646,18 @@ async def process_message(message, message_index):
                             with open(output_gif_path, 'rb') as gif_file:
                                 gif_bytes = gif_file.read()
                                 gif_base64 = base64.b64encode(gif_bytes).decode()
-
+                            media_id = f'media_{uuid.uuid4().hex[:8]}'
                             with open(output_file, 'a', encoding='utf-8') as f:
                                 f.write(f'<div style="position: relative; display: flex; flex-direction: column">')
-                                f.write(f'<img src="data:image/gif;base64,{gif_base64}" width="310" />')
-                                f.write(f'<div class="image-number"></div>') 
-                                f.write(f'<span class="copy-button img" onclick="copyVideoToClipboard(`{output_gif_path}`, event)">copy GIF</span>')
+                                f.write(f'<img id="{media_id}" src="data:image/gif;base64,{gif_base64}" width="310" />')
+                                f.write(f'<div class="image-number"></div>')
+                                f.write(f'<div class="media-controls">')
+                                f.write(f'<span class="rotate-button left" onclick="rotateMedia(\'{media_id}\', \'left\', \'{output_gif_path}\', \'gif\')">↺</span>')
+                                f.write(f'<span class="rotate-button right" onclick="rotateMedia(\'{media_id}\', \'right\', \'{output_gif_path}\', \'gif\')">↻</span>')
                                 f.write('</div>')
+                                f.write('</div>')
+                                f.write(f'<span class="copy-button img" onclick="copyVideoToClipboard(`{output_gif_path}`, event)">copy GIF</span>')
+                                
 
                             if message.text:
                                 write_to_output(message, output_file, output_main_file)
@@ -603,15 +688,22 @@ async def process_message(message, message_index):
             file_format = 'PNG' if img.mode in ('RGBA', 'LA') else 'JPEG'
             cropped_img.save(buffered, format=file_format)
             img_str = base64.b64encode(buffered.getvalue()).decode()
+            media_id = f'media_{uuid.uuid4().hex[:8]}'
+            at_word, text = get_at_word(message)
+            output_image_path = f"images/{at_word}.png"
+
             with open(output_file, 'a', encoding='utf-8') as f:
                 f.write(f'<div style="position: relative; display: flex; flex-direction: column">')
-                f.write(f'<img src="data:image/{file_format.lower()};base64,{img_str}" />')
-                f.write(f'<div class="image-number"></div>') 
-                f.write(f'<span class="copy-button img" onclick="copyImageToClipboard(`data:image/{file_format.lower()};base64,{img_str}`, event)">copy image</span>')
+                f.write(f'<img id="{media_id}" src="data:image/{file_format.lower()};base64,{img_str}" />')
+                f.write(f'<div class="image-number"></div>')
+                f.write(f'<div class="media-controls">')
+                f.write(f'<span class="rotate-button left" onclick="rotateMedia(\'{media_id}\', \'left\', \'{output_image_path}\', \'image\')">↺</span>')
+                f.write(f'<span class="rotate-button right" onclick="rotateMedia(\'{media_id}\', \'right\', \'{output_image_path}\', \'image\')">↻</span>') 
                 f.write(f'</div>')
+                f.write(f'</div>')
+                f.write(f'<span class="copy-button img" onclick="copyImageToClipboard(`data:image/{file_format.lower()};base64,{img_str}`, event)">copy image</span>')
 
             if message.text:
-
                 at_word = write_to_output(message, output_file, output_main_file) 
                 if cropped_img:
                     file_name = at_word
@@ -948,7 +1040,11 @@ async def process_messages_for_author(
                                 <line x1="12" y1="16" x2="12" y2="12"></line>
                                 <line x1="12" y1="8" x2="12.01" y2="8"></line>
                             </svg>
-                            <div class="tooltip-text">Press enter in "main" script to make a post with chosen time. Press + to add new time</div>
+                            <div class="tooltip-text">
+                            Press enter in "main" script to make a post with chosen time. Press 
+                            <span class="blue">blue</span> / <span class="orange">orange</span> + to add new 
+                            <span class="personal">personal</span> / <span class="general">general</span> time. 
+                        </div>
                         </div>
                     '''
 
