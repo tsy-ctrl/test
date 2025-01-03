@@ -543,7 +543,7 @@ async def process_message(message, message_index):
         text = replace_text(text)  # Assuming replace_text is defined elsewhere
         
         # Extract @ mention
-        at_word_match = re.search(r'@([a-zA-Z0-9-*.]+)', text)
+        at_word_match = re.search(r'@([a-zA-Z0-9-_.]+)', text)
         at_word2 = at_word_match.group(1) if at_word_match else ''
         at_word = at_word_match.group(1).replace('.', '-') if at_word_match else ''
         
