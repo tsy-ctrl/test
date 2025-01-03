@@ -30,6 +30,7 @@ import telethon
 import pyperclip
 import cryptg
 import uuid
+import numpy as np
 
 exe_path = os.path.abspath(sys.executable)
 exe_dir = os.path.dirname(exe_path)
@@ -136,8 +137,6 @@ def delete_files_py():
     except Exception as e:
         print(f"Произошла ошибка: {e}")
         return
-    
-import numpy as np
 
 def rotate_media_file(file_path, direction):
 
@@ -533,21 +532,36 @@ def correct_orientation(img):
 async def process_message(message, message_index):
 
     def get_at_word(message):
+        # Clean and process the text
         text = html.escape(message.text).replace('\n', '<br>').replace('`', "'")
-        text = re.sub(r'\\[|\\]|\\(|\\)', ' ', text) 
+        text = re.sub(r'\\[|\\]|\\(|\\)', ' ', text)
         text = re.sub(r'\\([^)]*\\)', '', text)
         text = re.sub(r'https?\\S+', '', text)
         text = re.sub(r'@\\s+', '@', text)
         text = re.sub(r"^'''|'''$", "", text)
         text = re.sub(r'`', '', text)
-        text = replace_text(text)
-        at_word_match = re.search(r'@([a-zA-Z0-9-_.]+)', text)
+        text = replace_text(text)  # Assuming replace_text is defined elsewhere
+        
+        # Extract @ mention
+        at_word_match = re.search(r'@([a-zA-Z0-9-*.]+)', text)
         at_word2 = at_word_match.group(1) if at_word_match else ''
         at_word = at_word_match.group(1).replace('.', '-') if at_word_match else ''
+        
+        # Clean up trailing hyphens
         while at_word.endswith('-'):
             at_word = at_word[:-1]
-        with open(os.path.join('..', 'files', 'tags.txt'), 'a', encoding='utf-8') as ff:
-            ff.write(at_word2 + '\n')
+        
+        tags_file = os.path.join('..', 'files', 'tags.txt')
+        if at_word2:
+            existing_tags = set()
+            if os.path.exists(tags_file):
+                with open(tags_file, 'r', encoding='utf-8') as f:
+                    existing_tags = {line.strip() for line in f}
+            
+            if at_word2 not in existing_tags:
+                with open(tags_file, 'a', encoding='utf-8') as ff:
+                    ff.write(at_word2 + '\n')
+        
         return at_word, text
 
     def write_to_output(message, output_file, output_main_file):
@@ -1302,25 +1316,6 @@ async def process_event(event):
                                 except Exception as e:
                                     print(f"Ошибка при получении сообщений из канала: {e}")
                                     return
-                                
-                                messages_to_forward = []
-                                try:
-                                    async for message in event.client.iter_messages(channel_entity):
-                                        if not isinstance(message, telethon.tl.patched.MessageService):
-                                            messages_to_forward.append(message)
-                                except Exception as e:
-                                    print(f"Ошибка при получении сообщений из канала: {e}")
-                                    return
-                                
-                                # Пересылаем сообщения из канала в текущий чат
-                                messages_to_forward = []
-                                try:
-                                    async for message in event.client.iter_messages(channel_entity):
-                                        if not isinstance(message, telethon.tl.patched.MessageService):
-                                            messages_to_forward.append(message)
-                                except Exception as e:
-                                    print(f"Ошибка при получении сообщений из канала: {e}")
-                                    return
 
                                 # Проверяем, что есть сообщения для пересылки
                                 if messages_to_forward:
@@ -1360,6 +1355,49 @@ async def process_event(event):
                                         chat_user=chat_user,
                                         nickname=nickname     
                                     )
+
+                                    async def process_messages_with_numbers(forwarded_messages):
+                                        number_counter = 1
+                                        previous_message_has_no_photo = False
+                                        
+                                        # Keep track of messages we need to respond to
+                                        messages_to_respond = []
+                                        
+                                        # Get the ID of the first message in the sequence
+                                        first_message_id = forwarded_messages[0].id if forwarded_messages else None
+                                        
+                                        # Iterate through messages to find photo messages after text-only messages
+                                        for i, message in enumerate(forwarded_messages):
+                                            # Check if current message has photo and text
+                                            has_photo = message.media is not None
+                                            has_text = message.text is not None and len(message.text) > 0
+                                            
+                                            # Special handling for the first message
+                                            if i == 0 and has_photo and has_text:
+                                                messages_to_respond.append({
+                                                    'message': message,
+                                                    'number': number_counter
+                                                })
+                                                number_counter += 1
+                                            # For all other messages, check if they come after a text-only message
+                                            elif i > 0 and has_photo and has_text and previous_message_has_no_photo:
+                                                messages_to_respond.append({
+                                                    'message': message,
+                                                    'number': number_counter
+                                                })
+                                                number_counter += 1
+                                                
+                                            # Update the flag for next iteration
+                                            previous_message_has_no_photo = has_text and not has_photo
+                                        
+                                        # Send responses
+                                        for msg_data in messages_to_respond:
+                                            await msg_data['message'].reply(str(msg_data['number']))
+                                        
+                                        return first_message_id
+
+                                    
+                                    await process_messages_with_numbers(forwarded_messages)
 
                         except Exception as e:
                             print(f"Ошибка при обработке ссылки: {e}")
