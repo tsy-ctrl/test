@@ -1145,7 +1145,47 @@ async def process_messages_for_author(
             except Exception as e:
                 output_file.write(f'<div class="error-message">Error loading hints: {str(e)}</div>')
 
+async def process_messages_with_numbers(messages, start_number=1):
+    number_counter = start_number
+    messages_to_respond = []
+    previous_was_text_only = False
+    consecutive_text_count = 0
+    
+    for i, message in enumerate(messages):
             
+        has_photo = message.media is not None
+        has_text = message.text is not None and len(message.text) > 0
+        # Проверяем текстовое сообщение
+        if has_text and not has_photo:
+        
+            consecutive_text_count += 1
+            if consecutive_text_count >= 2:
+                break  # Прерываем при двух текстах подряд
+            previous_was_text_only = True
+            continue
+        else:
+            # Сбрасываем счётчик если это не текстовое сообщение
+            consecutive_text_count = 0
+        
+        # Если сообщение с фото и текстом идёт после текстового
+        if has_photo and has_text and previous_was_text_only:
+            messages_to_respond.append({
+                'message': message,
+                'number': number_counter
+            })
+            number_counter += 1
+            previous_was_text_only = False
+        
+        # Сбрасываем флаг если это не текстовое сообщение
+        if has_photo or not has_text:
+            previous_was_text_only = False
+    
+    # Отправляем ответы
+    for msg_data in messages_to_respond:
+        await msg_data['message'].reply(str(msg_data['number']))
+    
+    return messages[0].id if messages else None
+
 async def process_event(event):
     try:
         global last_author
@@ -1161,6 +1201,28 @@ async def process_event(event):
                 original_author = replied_message.sender_id
                 
                 await process_messages_for_author(replied_message, original_author, start_id, event)
+                
+                prev_messages = await event.client.get_messages(
+                    event.chat_id,
+                    limit=1,
+                    max_id=event.message.id, 
+                    min_id=event.message.id - 2
+                )
+
+                if prev_messages and len(prev_messages) > 0:
+                    prev_message = prev_messages[0]
+                    if (prev_message.text and
+                        (prev_message.text.strip().isdigit() or
+                        prev_message.text.strip() == MESSAGE)): 
+                        isProcessing = False
+                        return
+                
+                messages = []
+                async for message in event.client.iter_messages(event.chat_id, min_id=start_id - 1, reverse=True):
+                    if message.sender_id != original_author:
+                        break
+                    messages.append(message)
+                await process_messages_with_numbers(messages, start_number=2)
                 
                 isProcessing = False
 
@@ -1355,49 +1417,8 @@ async def process_event(event):
                                         chat_user=chat_user,
                                         nickname=nickname     
                                     )
-
-                                    async def process_messages_with_numbers(forwarded_messages):
-                                        number_counter = 1
-                                        previous_message_has_no_photo = False
-                                        
-                                        # Keep track of messages we need to respond to
-                                        messages_to_respond = []
-                                        
-                                        # Get the ID of the first message in the sequence
-                                        first_message_id = forwarded_messages[0].id if forwarded_messages else None
-                                        
-                                        # Iterate through messages to find photo messages after text-only messages
-                                        for i, message in enumerate(forwarded_messages):
-                                            # Check if current message has photo and text
-                                            has_photo = message.media is not None
-                                            has_text = message.text is not None and len(message.text) > 0
-                                            
-                                            # Special handling for the first message
-                                            if i == 0 and has_photo and has_text:
-                                                messages_to_respond.append({
-                                                    'message': message,
-                                                    'number': number_counter
-                                                })
-                                                number_counter += 1
-                                            # For all other messages, check if they come after a text-only message
-                                            elif i > 0 and has_photo and has_text and previous_message_has_no_photo:
-                                                messages_to_respond.append({
-                                                    'message': message,
-                                                    'number': number_counter
-                                                })
-                                                number_counter += 1
-                                                
-                                            # Update the flag for next iteration
-                                            previous_message_has_no_photo = has_text and not has_photo
-                                        
-                                        # Send responses
-                                        for msg_data in messages_to_respond:
-                                            await msg_data['message'].reply(str(msg_data['number']))
-                                        
-                                        return first_message_id
-
-                                    
-                                    await process_messages_with_numbers(forwarded_messages)
+                                
+                                    await process_messages_with_numbers(forwarded_messages,  start_number=2)
 
                         except Exception as e:
                             print(f"Ошибка при обработке ссылки: {e}")
