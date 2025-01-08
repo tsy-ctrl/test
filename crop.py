@@ -428,17 +428,19 @@ def add_hint():
                 hints_data[chat_id] = {'now': False}
             
             hint_parts = new_hint_key.split()
-            new_message_count = (message_count * 2 
-                if not hints_data[chat_id].get('now', False) 
-                else message_count)
+            if len(hint_parts) > 1:
+                second_part = int(hint_parts[1])
+                if second_part == message_count:
+                    hints_data[chat_id]['now'] = True
+                elif second_part == message_count * 2:
+                    hints_data[chat_id]['now'] = False
+                else:
+                    hint_parts[1] = str(message_count)
+                    hints_data[chat_id]['now'] = True
+                new_hint_key = ' '.join(hint_parts)
             
-            new_hint_value = (f"{new_hint_key} {new_message_count}" 
-                            if len(hint_parts) == 1 
-                            else new_hint_key)
+            hints_data[chat_id][new_hint_key] = 0
             
-            hints_data[chat_id][new_hint_value] = 0
-            
-            # Обновление checkbox
             if 'checkbox' not in hints_data[chat_id] or not hints_data[chat_id].get('checkbox'):
                 non_service_keys = [
                     key for key in hints_data[chat_id].keys() 
@@ -447,10 +449,9 @@ def add_hint():
                 if non_service_keys:
                     hints_data[chat_id]['checkbox'] = non_service_keys[0]
             
-            result_key = new_hint_value
+            result_key = new_hint_key
         
         else:
-           
             if 'hints' not in hints_data:
                 hints_data['hints'] = []
           
@@ -474,7 +475,6 @@ def add_hint():
         print(e)
         return jsonify({"success": False, "message": str(e)})
     
-
 executor = ThreadPoolExecutor(max_workers=1)
 
 @app.route('/')
@@ -1193,8 +1193,9 @@ async def process_messages_for_author(
                                 </div>
                             </div>
                             '''
-
-                hints_html += '</div>'
+                    
+                    if sorted_hints or allhints_data.get('hints'):
+                        hints_html += '</div>'
 
                 output_file.write(hints_html)
                 
@@ -1349,7 +1350,6 @@ async def process_event(event):
 
                 if prev_messages and len(prev_messages) > 0:
                     prev_message = prev_messages[0]
-                    print(prev_message.text)
                     if (prev_message.text and
                         (prev_message.text.strip().isdigit() or
                         prev_message.text.strip() == MESSAGE)): 
