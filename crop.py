@@ -44,13 +44,14 @@ if platform.system() == "Darwin":
 from moviepy import VideoFileClip
 
 sys.stdout.flush()
-# Initialize the Flask application
 
 templatesDir = os.getcwd() + '/templates'
 staticDir = os.getcwd() + '/static'
 
 app = Flask(__name__, template_folder=templatesDir, static_folder=staticDir)
 last_author = None
+
+buttons_div = ''
 
 with open('templates/output.html', 'w', encoding='utf-8') as f:
     f.write("""
@@ -144,32 +145,28 @@ def rotate_media_file(file_path, direction):
         file_ext = os.path.splitext(file_path)[1].lower()
         
         if file_ext in ['.jpg', '.jpeg', '.png']:
-            # Rotate static images
+           
             with Image.open(file_path) as img:
                 angle = -90 if direction == 'right' else 90
                 rotated = img.rotate(angle, expand=True)
                 rotated.save(file_path,quality=100)
                 
         elif file_ext in ['.gif', '.mp4']:
-            # Rotate GIF and video files
+    
             clip = VideoFileClip(file_path)
             angle = -90 if direction == 'right' else 90
 
-            # Extract the audio if present
             audio = clip.audio
 
-            # Define a frame transformation function
             def transform_frame(get_frame, t):
                 frame = get_frame(t)
                 return np.rot90(frame, k=1 if angle == 90 else 3, axes=(0, 1))
             
             rotated_clip = clip.transform(transform_frame)
 
-            # Add the extracted audio back if it exists
             if audio:
                 rotated_clip = rotated_clip.with_audio(audio)
 
-            # Save the rotated video
             if file_ext == '.gif':
                 rotated_clip.write_gif(file_path + '_rotated.gif', fps=clip.fps)
             else:
@@ -180,10 +177,9 @@ def rotate_media_file(file_path, direction):
                     audio_codec="aac",
                     fps=clip.fps,
                     preset="medium",
-                    ffmpeg_params=["-crf", "18"]  # High-quality setting
+                    ffmpeg_params=["-crf", "18"]  
                 )
 
-                # Replace the original file
                 clip.close()
                 rotated_clip.close()
                 if os.path.exists(file_path):
@@ -326,85 +322,73 @@ def update_hints():
    data = request.json
    hint_key = data.get('hint_key')
    action = data.get('action', 'update')
-   hint_type = data.get('hint_type', 'personal')  # personal или general
+   hint_type = data.get('hint_type', 'personal') 
 
    try:
-       # Выбираем нужный путь в зависимости от типа подсказок
+       
        hints_path = os.path.join('..', 'files', 'hints',
            'hints.json' if hint_type == 'personal' else 'allhints.json')
        
-       # Для персональных подсказок нужен chat_id
        chat_id = data.get('chat_id') if hint_type == 'personal' else None
-       
-       # Загрузка данных
+      
        with open(hints_path, 'r') as f:
            hints_data = json.load(f)
        
-       # Для персональных подсказок
+   
        if hint_type == 'personal':
            if str(chat_id) in hints_data:
-               # Логика удаления
+             
                if action == 'delete':
                    if hint_key in hints_data[str(chat_id)]:
                        del hints_data[str(chat_id)][hint_key]
                    
-                   # Находим не служебные ключи
+                   
                    non_service_keys = [key for key in hints_data[str(chat_id)].keys() 
                                        if key not in ['checkbox', 'now']]
                    
-                   # Если не осталось ключей, очищаем запись
+               
                    if not non_service_keys:
                        hints_data[str(chat_id)] = {'now': hints_data[str(chat_id)].get('now', False)}
                    else:
-                       # Если удален текущий checkbox, обновляем
+            
                        if hints_data[str(chat_id)].get('checkbox') == hint_key:
                            hints_data[str(chat_id)]['checkbox'] = non_service_keys[0]
 
-                   # Обновление checkbox
                elif action == 'update':
                     hints_data[str(chat_id)]['checkbox'] = hint_key
                     
-                    # Очищаем checkbox в общих подсказках
                     allhints_path = os.path.join('..', 'files', 'hints', 'allhints.json')
                     with open(allhints_path, 'r') as f:
                         allhints_data = json.load(f)
                     
-                    # Очищаем checkbox в общих подсказках
                     allhints_data['checkbox'] = ''
                     
-                    # Сохраняем изменения в общих подсказках
                     with open(allhints_path, 'w') as f:
                         json.dump(allhints_data, f, indent=4, ensure_ascii=False)
        
-       # Для общих подсказок
+
        else:
-           # Логика удаления
            if action == 'delete':
                if hint_key in hints_data.get('hints', []):
                    hints_data['hints'].remove(hint_key)
                    
-                   # Сброс checkbox если удален текущий
                    if hints_data.get('checkbox') == hint_key:
                        hints_data['checkbox'] = ''
            
-           # Обновление checkbox
            elif action == 'update':
                hints_data['checkbox'] = hint_key
                
-               # Если это общие подсказки, очищаем персональные checkbox
                hints_hints_path = os.path.join('..', 'files', 'hints', 'hints.json')
                with open(hints_hints_path, 'r') as f:
                    hints_hints_data = json.load(f)
                
-               # Очищаем checkbox во всех персональных подсказках
                for chat_id in hints_hints_data:
                    if 'checkbox' in hints_hints_data[chat_id]:
                        hints_hints_data[chat_id]['checkbox'] = ''
-       # Сохраняем изменения
+
        with open(hints_path, 'w') as f:
            json.dump(hints_data, f, indent=4, ensure_ascii=False)
        
-       # Проверка на пустоту (только для персональных подсказок)
        if hint_type == 'personal':
            if str(chat_id) in hints_data and len(hints_data[str(chat_id)]) <= 1:
                return jsonify({
@@ -427,18 +411,15 @@ def update_hints():
 def add_hint():
     data = request.json
     new_hint_key = data.get('hint_key')
-    hint_type = data.get('hint_type', 'personal')  # personal или general
+    hint_type = data.get('hint_type', 'personal')
     
-    # Выбираем путь в зависимости от типа
     hints_path = os.path.join('..', 'files', 'hints',
         'hints.json' if hint_type == 'personal' else 'allhints.json')
     
     try:
-        # Загрузка существующих подсказок
         with open(hints_path, 'r', encoding='utf-8') as hints_file:
             hints_data = json.load(hints_file)
         
-        # Для персональных подсказок
         if hint_type == 'personal':
             chat_id = str(data.get('chat_id'))
             message_count = int(data.get('message_count', 0))
@@ -446,7 +427,6 @@ def add_hint():
             if chat_id not in hints_data:
                 hints_data[chat_id] = {'now': False}
             
-            # Логика формирования ключа
             hint_parts = new_hint_key.split()
             new_message_count = (message_count * 2 
                 if not hints_data[chat_id].get('now', False) 
@@ -469,23 +449,19 @@ def add_hint():
             
             result_key = new_hint_value
         
-        # Для общих подсказок
         else:
-            # Создаем список hints если его нет
+           
             if 'hints' not in hints_data:
                 hints_data['hints'] = []
-            
-            # Добавляем только уникальные подсказки
+          
             if new_hint_key not in hints_data['hints']:
                 hints_data['hints'].append(new_hint_key)
             
-            # Обновляем checkbox
             if not hints_data.get('checkbox'):
                 hints_data['checkbox'] = new_hint_key
             
             result_key = new_hint_key
         
-        # Сохраняем изменения
         with open(hints_path, 'w', encoding='utf-8') as hints_file:
             json.dump(hints_data, hints_file, indent=4)
         
@@ -532,7 +508,6 @@ def correct_orientation(img):
 async def process_message(message, message_index):
 
     def get_at_word(message):
-        # Clean and process the text
         text = html.escape(message.text).replace('\n', '<br>').replace('`', "'")
         text = re.sub(r'\\[|\\]|\\(|\\)', ' ', text)
         text = re.sub(r'\\([^)]*\\)', '', text)
@@ -540,14 +515,12 @@ async def process_message(message, message_index):
         text = re.sub(r'@\\s+', '@', text)
         text = re.sub(r"^'''|'''$", "", text)
         text = re.sub(r'`', '', text)
-        text = replace_text(text)  # Assuming replace_text is defined elsewhere
+        text = replace_text(text) 
         
-        # Extract @ mention
         at_word_match = re.search(r'@([a-zA-Z0-9-_.]+)', text)
         at_word2 = at_word_match.group(1) if at_word_match else ''
         at_word = at_word_match.group(1).replace('.', '-') if at_word_match else ''
         
-        # Clean up trailing hyphens
         while at_word.endswith('-'):
             at_word = at_word[:-1]
         
@@ -586,6 +559,9 @@ async def process_message(message, message_index):
             </script>
             """)
             return at_word
+
+    def file_exists(filename):
+        return os.path.exists(filename) and os.path.getsize(filename) > 0
     
     output_file = f'templates/output_{message_index}.html'
     output_main_file = f'templates/output.html'
@@ -594,21 +570,41 @@ async def process_message(message, message_index):
             if hasattr(message.media, 'document'):
                 for attr in message.media.document.attributes:
                     if isinstance(attr, DocumentAttributeVideo):
+                        at_word = ''
+                        if message.text:
+                            at_word, text = get_at_word(message)
+                            
+                        output_video_path = f"images/{at_word if at_word else 'output_video'}.mp4"
+                        
+                        # Проверяем существование видео
+                        if file_exists(output_video_path):
+                            print(f"Видео {output_video_path} уже существует, пропускаем обработку")
+                            with open(output_video_path, 'rb') as video_file:
+                                video_bytes = video_file.read()
+                                video_base64 = base64.b64encode(video_bytes).decode()
+                            media_id = f'media_{uuid.uuid4().hex[:8]}'
+                            with open(output_file, 'a', encoding='utf-8') as f:
+                                f.write(f'<div style="position: relative; display: flex; flex-direction: column">')
+                                f.write(f'<video id="{media_id}" controls src="data:video/mp4;base64,{video_base64}" width="310"></video>')
+                                f.write(f'<div class="image-number"></div>')
+                                f.write(f'<div class="media-controls">')
+                                f.write(f'<span class="rotate-button left" onclick="rotateMedia(\'{media_id}\', \'left\', \'{output_video_path}\', \'video\')">↺</span>')
+                                f.write(f'<span class="rotate-button right" onclick="rotateMedia(\'{media_id}\', \'right\', \'{output_video_path}\', \'video\')">↻</span>')
+                                f.write('</div>')
+                                f.write('</div>')
+                                f.write(f'<span class="copy-button img" onclick="copyVideoToClipboard(`{output_video_path}`, event)">copy video</span>')
+                            
+                            if message.text:
+                                write_to_output(message, output_file, output_main_file)
+                            return
+
                         media_data = await message.download_media(file=BytesIO())
                         temp_video_path = f'images/{uuid.uuid4()}_temp_video.mp4'
                         with open(temp_video_path, 'wb') as temp_video_file:
                             temp_video_file.write(media_data.getvalue())
 
                         clip = VideoFileClip(temp_video_path)
-
                         trimmed_clip = clip[0:clip.duration-1] if clip.duration > 1 else clip
-
-                        at_word = ''
-                        if message.text:
-                            at_word, text = get_at_word(message)
-
-                        file_name = at_word if at_word else 'output_video'
-                        output_video_path = f"images/{file_name}.mp4"
                         trimmed_clip.write_videofile(output_video_path, codec='libx264')
                         trimmed_clip.close()
                         clip.close()
@@ -633,30 +629,51 @@ async def process_message(message, message_index):
 
                         if os.path.exists(temp_video_path):
                             os.remove(temp_video_path)
-                        return  # Остановка обработки для этого сообщения
+                        return
 
                     elif message.media and hasattr(message.media, 'document') and message.media.document:
                         document = message.media.document
                         if document.mime_type == 'image/gif':
+                            at_word = ''
+                            if message.text:
+                                at_word, text = get_at_word(message)
+                                
+                            output_gif_path = f"images/{at_word if at_word else f'output_gif_{uuid.uuid4()}'}.gif"
+                            
+                            # Проверяем существование GIF
+                            if file_exists(output_gif_path):
+                                print(f"GIF {output_gif_path} уже существует, пропускаем обработку")
+                                with open(output_gif_path, 'rb') as gif_file:
+                                    gif_bytes = gif_file.read()
+                                    gif_base64 = base64.b64encode(gif_bytes).decode()
+                                media_id = f'media_{uuid.uuid4().hex[:8]}'
+                                with open(output_file, 'a', encoding='utf-8') as f:
+                                    f.write(f'<div style="position: relative; display: flex; flex-direction: column">')
+                                    f.write(f'<img id="{media_id}" src="data:image/gif;base64,{gif_base64}" width="310" />')
+                                    f.write(f'<div class="image-number"></div>')
+                                    f.write(f'<div class="media-controls">')
+                                    f.write(f'<span class="rotate-button left" onclick="rotateMedia(\'{media_id}\', \'left\', \'{output_gif_path}\', \'gif\')">↺</span>')
+                                    f.write(f'<span class="rotate-button right" onclick="rotateMedia(\'{media_id}\', \'right\', \'{output_gif_path}\', \'gif\')">↻</span>')
+                                    f.write('</div>')
+                                    f.write('</div>')
+                                    f.write(f'<span class="copy-button img" onclick="copyVideoToClipboard(`{output_gif_path}`, event)">copy GIF</span>')
+                                
+                                if message.text:
+                                    write_to_output(message, output_file, output_main_file)
+                                return
+
                             media_data = await message.download_media(file=BytesIO())
                             gif_path = f'images/{uuid.uuid4()}_temp_image.gif'
                             with open(gif_path, 'wb') as gif_file:
                                 gif_file.write(media_data.getvalue())
 
-                            # Обработка GIF с использованием moviepy
                             clip = VideoFileClip(gif_path)
                             trimmed_clip = clip[0:clip.duration-1] if clip.duration > 1 else clip
-                            at_word = ''
-                            if message.text:
-                                at_word, text = get_at_word(message)
-
-                            file_name = at_word if at_word else f'output_gif_{uuid.uuid4()}'
-                            output_gif_path = f"images/{file_name}.gif"
                             trimmed_clip = await process_gif(trimmed_clip)
                             trimmed_clip.write_gif(output_gif_path, fps=25, program='ffmpeg')
                             trimmed_clip.close()
                             clip.close()
-                            # Копирование GIF в буфер обмена
+                            
                             with open(output_gif_path, 'rb') as gif_file:
                                 gif_bytes = gif_file.read()
                                 gif_base64 = base64.b64encode(gif_bytes).decode()
@@ -671,18 +688,14 @@ async def process_message(message, message_index):
                                 f.write('</div>')
                                 f.write('</div>')
                                 f.write(f'<span class="copy-button img" onclick="copyVideoToClipboard(`{output_gif_path}`, event)">copy GIF</span>')
-                                
 
                             if message.text:
                                 write_to_output(message, output_file, output_main_file)
 
                             if os.path.exists(gif_path):
                                 os.remove(gif_path)
+                            return
 
-                            return  
-
-
-            # Handle images
             media_data = await message.download_media(file=BytesIO())
             img = Image.open(media_data)
             img = correct_orientation(img)
@@ -692,11 +705,34 @@ async def process_message(message, message_index):
             right = width - random.randint(1, 5)
             bottom = height - random.randint(1, 5)
 
-            # Обрезаем изображение с полученными случайными границами
             cropped_img = img.crop((left, top, right, bottom))
-
             max_size = (1000, 1000)
             cropped_img.thumbnail(max_size, Image.Resampling.LANCZOS)
+
+            at_word, text = get_at_word(message)
+            output_image_path = f"images/{at_word}.png"
+            
+            # Проверяем существование изображения
+            if file_exists(output_image_path):
+                print(f"Изображение {output_image_path} уже существует, пропускаем обработку")
+                with open(output_image_path, 'rb') as img_file:
+                    img_bytes = img_file.read()
+                    img_str = base64.b64encode(img_bytes).decode()
+                media_id = f'media_{uuid.uuid4().hex[:8]}'
+                with open(output_file, 'a', encoding='utf-8') as f:
+                    f.write(f'<div style="position: relative; display: flex; flex-direction: column">')
+                    f.write(f'<img id="{media_id}" src="data:image/png;base64,{img_str}" />')
+                    f.write(f'<div class="image-number"></div>')
+                    f.write(f'<div class="media-controls">')
+                    f.write(f'<span class="rotate-button left" onclick="rotateMedia(\'{media_id}\', \'left\', \'{output_image_path}\', \'image\')">↺</span>')
+                    f.write(f'<span class="rotate-button right" onclick="rotateMedia(\'{media_id}\', \'right\', \'{output_image_path}\', \'image\')">↻</span>')
+                    f.write('</div>')
+                    f.write('</div>')
+                    f.write(f'<span class="copy-button img" onclick="copyImageToClipboard(`data:image/png;base64,{img_str}`, event)">copy image</span>')
+                
+                if message.text:
+                    write_to_output(message, output_file, output_main_file)
+                return
 
             buffered = BytesIO()
             file_format = 'PNG' if img.mode in ('RGBA', 'LA') else 'JPEG'
@@ -754,6 +790,24 @@ folder = os.getenv('FOLDER')
 app.config['SERVER_NAME'] = 'localhost:8765'    
 clients = {}
 
+async def autoload_content(client_id, message_id, sender_id):
+    try:
+        global clients
+        client = clients[str(client_id)]
+        message = await client.get_messages(entity=sender_id, ids=message_id)
+        pyperclip.copy(message.text)
+        with open("files/autoload.json", "w") as f:
+            f.write("")
+        await process_messages_for_author(message = message, client_to_use = client, original_author = message.sender_id, start_id = message_id)
+        global buttons_div
+        with open('templates/output.html', 'a', encoding='utf-8') as f:
+            f.write(buttons_div)
+    except Exception as e:
+        print("Error: ", e)
+        with open("files/autoload.json", "w") as f:
+            f.write("")
+        pass
+
 async def send_message(client_id, receiver_id, folder):
     try:
         global clients
@@ -773,7 +827,6 @@ async def send_message(client_id, receiver_id, folder):
         pass
 
 async def check_file_and_send_message():
-
     while True:
         try:
             with open("files/sendInfo.json", "r") as f:
@@ -783,9 +836,23 @@ async def check_file_and_send_message():
                 data = json.loads(data)
                 client_id = data["client_id"]
                 receiver_id = data["receiver_id"]
-
                 await send_message(client_id, receiver_id, folder)
+            await asyncio.sleep(1)
+        except Exception as e:
+            print(e)
+            break
 
+async def check_file_and_autoload_content():
+    while True:
+        try:
+            with open("files/autoload.json", "r") as f:
+                data = f.read()
+            if data:
+                    data = json.loads(data)
+                    client_id = data["client_id"]
+                    message_id = data["message_id"]
+                    sender_id = data["sender_id"]
+                    await autoload_content(client_id, message_id, sender_id)
             await asyncio.sleep(1)
         except Exception as e:
             print(e)
@@ -824,12 +891,11 @@ async def process_messages_for_author(
 ):
     
     with open('./id/id.txt', 'w') as id_file:
-                id_file.write(str(event.chat_id))
-    
+        id_file.write(str(event.chat_id) if event is not None else str(chat_id_to_use))
+
     global last_author
     global isProcessing
 
-    # Определение клиента и chat_id
     if client_to_use is None:
         if event is not None:
             client_to_use = event.client
@@ -853,7 +919,6 @@ async def process_messages_for_author(
     chat_user = ""
     
     try:
-        # Попытка получить сущность пользователя и добавить в контакты
         user = await client_to_use.get_entity(original_author)
         await client_to_use(AddContactRequest(
             id=user.id,
@@ -863,7 +928,6 @@ async def process_messages_for_author(
             add_phone_privacy_exception=False
         ))
         
-        # Получение информации о чате
         chat_user = await client_to_use.get_entity(chat_id_to_use)
     except: 
         pass
@@ -871,7 +935,6 @@ async def process_messages_for_author(
     if nickname is None:
         nickname = ' '.join(chat_user.first_name.split()[:2]) if hasattr(chat_user, 'first_name') else 'Unknown'
 
-    # Reset files
     with open(os.path.join('..', 'files', 'posts.txt'), 'w', encoding='utf-8'):
         pass
     with open(os.path.join('..', 'files', 'tags.txt'), 'w', encoding='utf-8'):
@@ -936,15 +999,11 @@ async def process_messages_for_author(
             write_to_posts(msg)
 
         with open('templates/output.html', 'a', encoding='utf-8') as output_file:
-            # Идем по номерам файлов в нужном порядке
             for i in range(len(messages_to_process)):
                 temp_filename = f'templates/output_{i}.html'
-                # Проверяем, существует ли временный файл
                 if os.path.exists(temp_filename):
-                    # Открываем временный файл и записываем его содержимое в основной файл
                     with open(temp_filename, 'r', encoding='utf-8') as temp_file:
                         output_file.write(temp_file.read())
-                    # Удаляем временный файл после его использования
                     os.remove(temp_filename)
             
             hints_path = os.path.join('..', 'files', 'hints', 'hints.json')
@@ -967,18 +1026,17 @@ async def process_messages_for_author(
                 old_checkbox = chat_hints.get('checkbox', '')
 
                 if 'now' in chat_hints:
-                    # Сначала найдем индекс текущего чекбокса
+                
                     non_service_keys = [key for key in chat_hints.keys() if key not in ['now', 'checkbox']]
                     checkbox_index = non_service_keys.index(old_checkbox) if old_checkbox in non_service_keys else -1
 
                     new_chat_hints = {}
                     for key, value in chat_hints.items():
-                        # Пропускаем служебные ключи
+                
                         if key in ['now']:
                             new_chat_hints[key] = value
                             continue
                         
-                        # Разделяем значения по пробелу
                         parts = str(key).split()
                         
                         if len(parts) >= 2:
@@ -989,20 +1047,17 @@ async def process_messages_for_author(
                             new_key = ' '.join(parts)
                             new_chat_hints[new_key] = value
                     
-                    # Обновим чекбокс, используя тот же индекс
+                   
                     non_service_new_keys = [key for key in new_chat_hints.keys() if key not in ['now', 'checkbox']]
                     if checkbox_index != -1 and checkbox_index < len(non_service_new_keys):
                         new_chat_hints['checkbox'] = non_service_new_keys[checkbox_index]
                     elif non_service_new_keys:
                         new_chat_hints['checkbox'] = non_service_new_keys[0]
 
-                    # Заменяем chat_hints полностью
                     chat_hints = new_chat_hints
 
-                # Обновляем данные для конкретного chat_id
                 hints_data[str(chat_id_to_use)] = chat_hints
                 
-                # Сохраняем обновленные данные обратно в файл
                 with open(hints_path, 'w', encoding='utf-8') as hints_file:
                     json.dump(hints_data, hints_file, indent=4)
                 
@@ -1140,58 +1195,141 @@ async def process_messages_for_author(
                             '''
 
                 hints_html += '</div>'
-                output_file.write(hints_html)
 
+                output_file.write(hints_html)
+                
             except Exception as e:
                 output_file.write(f'<div class="error-message">Error loading hints: {str(e)}</div>')
 
-async def process_messages_with_numbers(messages, start_number=1):
-    number_counter = start_number
+@app.route('/process_content_loader', methods=['POST'])
+def process_content_loader():
+    data = request.json
+    message_id = data.get('message_id')
+    sender_id = data.get('sender_id')
+    client_id = data.get('client_id')
+    try:
+        autoload_data = {
+            "client_id": client_id,
+            "message_id": message_id,
+            "sender_id": sender_id
+        }
+        with open("files/autoload.json", "w", encoding="utf-8") as f:
+            json.dump(autoload_data, f, ensure_ascii=False, indent=4)
+        
+        
+        return jsonify({'success': True})
+    
+    except Exception as e:
+        print(f"Ошибка при обработке запроса: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def generate_buttons_html(messages_to_respond, client_id, active_number):
+    if len(messages_to_respond) <= 1:
+        return ''
+    buttons_html = ""
+    for msg_data in messages_to_respond:
+        message_data = {
+            'message_id': msg_data['message_id'],
+            'sender_id': msg_data['sender_id'],
+        }
+        
+        message_data_json = json.dumps(message_data)
+        active_class = "active" if msg_data['number'] == active_number else ""
+        
+        buttons_html += f'''
+            <button 
+                class="message-button {active_class}" 
+                onclick='processContentLoader(this, {message_data_json}, {client_id})'
+                data-number="{msg_data['number']}"
+            >
+            {msg_data['number']}
+            </button>
+        '''
+    
+    return f'<div class="buttons-grid">{buttons_html}</div>'
+
+previous_message_ids = []
+
+async def process_messages_with_numbers(messages, client_id):
+    global previous_message_ids
+    global buttons_div
+    active_number = 1
+    number_counter = 1
     messages_to_respond = []
     previous_was_text_only = False
     consecutive_text_count = 0
-    
+
+    # Обработка новых сообщений
     for i, message in enumerate(messages):
+        try:
+            has_photo = message.media is not None
+            has_text = message.text is not None and len(message.text) > 0
+            has_at_symbol = has_text and '@' in message.text
             
-        has_photo = message.media is not None
-        has_text = message.text is not None and len(message.text) > 0
-        # Проверяем текстовое сообщение
-        if has_text and not has_photo:
-        
-            consecutive_text_count += 1
-            if consecutive_text_count >= 2:
-                break  # Прерываем при двух текстах подряд
-            previous_was_text_only = True
-            continue
-        else:
-            # Сбрасываем счётчик если это не текстовое сообщение
-            consecutive_text_count = 0
-        
-        # Если сообщение с фото и текстом идёт после текстового
-        if has_photo and has_text and previous_was_text_only:
-            messages_to_respond.append({
-                'message': message,
-                'number': number_counter
-            })
-            number_counter += 1
+            if has_text and not has_photo:
+                consecutive_text_count += 1
+                if consecutive_text_count >= 2:
+                    break
+                previous_was_text_only = True
+                continue
+            else:
+                consecutive_text_count = 0
+                
+            if has_photo and has_text and has_at_symbol and (previous_was_text_only or i == 0):
+                messages_to_respond.append({
+                    'message': message,
+                    'message_id': message.id,
+                    'sender_id': message.peer_id.user_id,
+                    'number': number_counter,
+                })
+                
+                number_counter += 1
+
             previous_was_text_only = False
-        
-        # Сбрасываем флаг если это не текстовое сообщение
-        if has_photo or not has_text:
-            previous_was_text_only = False
+            if has_photo or not has_text:
+                previous_was_text_only = False
+        except Exception as e:
+            print(e)
+
+    # Получаем список ID текущих сообщений
+    current_message_ids = [msg['message_id'] for msg in messages_to_respond]
     
-    # Отправляем ответы
+    # Сравниваем списки ID
+    if set(current_message_ids) != set(previous_message_ids):
+        active_number = 1
+        # Обновляем хранилище в браузере через JavaScript
+        buttons_div = f'''
+            <script>
+                localStorage.setItem('activeButtonNumber', '1');
+            </script>
+        '''
+        with open('templates/output.html', 'a', encoding='utf-8') as f:
+            f.write(buttons_div)
+    
+    # Обновляем previous_message_ids
+    previous_message_ids = current_message_ids
+
+    # Отправляем номера сообщений в чат
     for msg_data in messages_to_respond:
-        await msg_data['message'].reply(str(msg_data['number']))
+        if msg_data['number'] > 1:
+            await msg_data['message'].reply(str(msg_data['number']))
+
+    buttons_div = generate_buttons_html(messages_to_respond, client_id, active_number)
+
+    with open('templates/output.html', 'a', encoding='utf-8') as f:
+        f.write(buttons_div)
     
-    return messages[0].id if messages else None
+    return messages_to_respond, messages[0].id if messages else None
 
 async def process_event(event):
     try:
         global last_author
         global isProcessing
+
         if event.is_private and not isProcessing:
+
             me = await event.client.get_me()
+           
             if event.message.is_reply and event.message.message == MESSAGE and event.message.sender_id == me.id:
                 isProcessing = True
                 replied_message = await event.message.get_reply_message()   
@@ -1199,7 +1337,7 @@ async def process_event(event):
                 pyperclip.copy(message_text)
                 start_id = replied_message.id
                 original_author = replied_message.sender_id
-                
+
                 await process_messages_for_author(replied_message, original_author, start_id, event)
                 
                 prev_messages = await event.client.get_messages(
@@ -1211,6 +1349,7 @@ async def process_event(event):
 
                 if prev_messages and len(prev_messages) > 0:
                     prev_message = prev_messages[0]
+                    print(prev_message.text)
                     if (prev_message.text and
                         (prev_message.text.strip().isdigit() or
                         prev_message.text.strip() == MESSAGE)): 
@@ -1222,7 +1361,8 @@ async def process_event(event):
                     if message.sender_id != original_author:
                         break
                     messages.append(message)
-                await process_messages_with_numbers(messages, start_number=2)
+              
+                await process_messages_with_numbers(messages, get_client_id(event.client))
                 
                 isProcessing = False
 
@@ -1255,7 +1395,7 @@ async def process_event(event):
                 replied_message = await event.message.get_reply_message()
                 original_author = replied_message.sender_id
 
-                # Удаляем старые файлы, если автор изменился
+              
                 if original_author != last_author:
                     folder_path = "./images"
                     for filename in os.listdir(folder_path):
@@ -1264,7 +1404,6 @@ async def process_event(event):
                         delete_files_py()
                 last_author = original_author
 
-                # Добавляем контакт, если нужно
                 user = await event.client.get_entity(original_author)
                 try:
                     await event.client(AddContactRequest(
@@ -1277,52 +1416,44 @@ async def process_event(event):
                 except:
                     pass
 
-                # Находим сообщения с медиа и текстом
+              
                 start_id = replied_message.id
                 messages_to_process = []
 
-                # Сохраняем все сообщения, начиная с того, на которое был сделан ответ
                 async for message in event.client.iter_messages(event.chat_id, min_id=start_id - 1, reverse=True):
                     if message.sender_id != original_author:
                         break
-                    # Добавляем все медиа и текстовые сообщения
+                
                     messages_to_process.append(message)
 
-                # Обрабатываем сообщения по порядку
                 i = 0
                 while i < len(messages_to_process):
                     current_message = messages_to_process[i]
 
-                    # Проверка на медиа (файл/фото)
                     if current_message.media:
-                        # Проверка следующего сообщения на текст
+                
                         caption = ""
                         if i + 1 < len(messages_to_process):
                             next_message = messages_to_process[i + 1]
                             if next_message.text:
                                 caption = next_message.text
-                                i += 1  # Пропускаем текстовое сообщение, так как он будет использован как подпись
+                                i += 1  
 
-                        # Отправляем файл с текстом (если он есть)
                         await event.client.send_file(
                             event.chat_id,
                             file=current_message.media,
                             caption=caption
                         )
 
-                    # Обработка текстового сообщения
                     elif current_message.text:
-                        # Проверка, если два текстовых сообщения идут подряд, прекращаем обработку
+                    
                         if i + 1 < len(messages_to_process) and messages_to_process[i + 1].text:
                             break
                         else:
-                            # Отправляем текстовое сообщение
                             await event.client.send_message(
                                 event.chat_id,
                                 current_message.text
                             )
-
-                    # Переходим к следующему сообщению
                     i += 1
 
             elif event.message.is_reply and event.message.message == LINK and event.message.sender_id == me.id and LINK != "":
@@ -1330,22 +1461,21 @@ async def process_event(event):
                     message_text = replied_message.text
                     if 't.me/' in message_text or 'https://t.me/' in message_text or '@' in message_text:
                         try:
-                            # Используем регулярное выражение для извлечения ссылки или упоминания канала
                             match = re.search(r't\.me/([+a-zA-Z0-9_-]+)|@([a-zA-Z0-9_]+)', message_text)
                             if match:
-                                link_part = match.group(1) if match.group(1) else match.group(2)  # Ссылка без 'https://t.me/' или 't.me/' или '@'
+                                link_part = match.group(1) if match.group(1) else match.group(2) 
                                 channel_entity = None
 
-                                # Проверяем, если это инвайт-ссылка
+                              
                                 if link_part.startswith('+'):
                                     try:
-                                        # Сначала пробуем получить сущность напрямую
+                                      
                                         channel_entity = await event.client.get_entity(link_part[1:])
                                         print("Пользователь уже является участником канала, пропускаем попытку присоединения.")
                                     except ValueError:
-                                        # Если не удалось, пробуем через CheckChatInviteRequest
+                                      
                                         try:
-                                            invite_info = await event.client(CheckChatInviteRequest(link_part[1:]))  # Убираем '+'
+                                            invite_info = await event.client(CheckChatInviteRequest(link_part[1:])) 
                                             if isinstance(invite_info, ChatInviteAlready):
                                                 channel_entity = invite_info.chat
                                             elif isinstance(invite_info, ChatInvite):
@@ -1364,12 +1494,10 @@ async def process_event(event):
                                         print(f"Ошибка при получении сущности канала: {e}")
                                         return
 
-                                # Если channel_entity все еще None, значит ничего не получилось, выходим
                                 if channel_entity is None:
                                     print("Не удалось получить информацию о канале")
                                     return
 
-                                # Пересылаем сообщения из канала в текущий чат
                                 messages_to_forward = []
                                 try:
                                     async for message in event.client.iter_messages(channel_entity):
@@ -1379,33 +1507,33 @@ async def process_event(event):
                                     print(f"Ошибка при получении сообщений из канала: {e}")
                                     return
 
-                                # Проверяем, что есть сообщения для пересылки
                                 if messages_to_forward:
-                                    # Пересылаем сообщения в хронологическом порядке
+                                   
                                     reversed_messages = list(reversed(messages_to_forward))
-                                    
-                                    # Находим индекс первого сообщения с текстом, @, и медиа
                                     start_index = 0
                                     for i, message in enumerate(reversed_messages):
                                         if '@' in message.text and message.media:
                                             start_index = i
                                             break
                                     
-                                    # Находим последний индекс сообщений с @ и медиа
                                     end_index = len(reversed_messages)
                                     for i in range(len(reversed_messages) - 1, start_index - 1, -1):
                                         if '@' in reversed_messages[i].text and reversed_messages[i].media:
                                             end_index = i + 1
                                             break
                                     
-                                    # Пересылаем сообщения от первого подходящего до последнего
                                     forwarded_messages = await event.client.forward_messages(event.chat_id, reversed_messages[start_index:end_index])
                                     
-                                    # Берем первое пересланное сообщение
                                     first_forwarded_msg = forwarded_messages[0]
                                     
                                     chat_user = await event.client.get_entity(event.chat_id)
                                     nickname = ' '.join(chat_user.first_name.split()[:2]) if hasattr(chat_user, 'first_name') else 'Unknown'
+
+                                    folder_path = "./images"
+                                    for filename in os.listdir(folder_path):
+                                        os.remove(os.path.join(folder_path, filename))
+                                    if switch:  
+                                        delete_files_py()
                                     
                                     await process_messages_for_author(
                                         message=first_forwarded_msg, 
@@ -1417,8 +1545,8 @@ async def process_event(event):
                                         chat_user=chat_user,
                                         nickname=nickname     
                                     )
-                                
-                                    await process_messages_with_numbers(forwarded_messages,  start_number=2)
+                                    
+                                    await process_messages_with_numbers(forwarded_messages, get_client_id(event.client))
 
                         except Exception as e:
                             print(f"Ошибка при обработке ссылки: {e}")
@@ -1434,8 +1562,7 @@ def parse_proxy_url(proxy_url):
 
     try:
         parsed_proxy = urlparse(proxy_url)
-        
-        # Проверка обязательных параметров
+    
         if not all([parsed_proxy.scheme, parsed_proxy.hostname, parsed_proxy.port]):
             print("Некорректный формат URL прокси")
             return None
@@ -1453,7 +1580,6 @@ def parse_proxy_url(proxy_url):
         print(f"Ошибка при обработке прокси: {e}")
         return None
 
-# Использование
 proxy_url = os.getenv('PROXY')
 proxy = parse_proxy_url(proxy_url)
 
@@ -1499,9 +1625,12 @@ async def main():
     global clients
     clients = await create_clients()
     await setup_event_handlers(clients)
-
     try:
-        await asyncio.gather(*(client.run_until_disconnected() for client in clients.values() if client), check_file_and_send_message())
+        await asyncio.gather(
+        *(client.run_until_disconnected() for client in clients.values() if client), 
+        check_file_and_autoload_content(), 
+        check_file_and_send_message() 
+    )
     except KeyboardInterrupt:
         sys.exit(0)
 
@@ -1517,7 +1646,6 @@ def run_telegram_client():
 def run_batch_file():
     updDir = os.getcwd()
 
-    # Оборачиваем путь в кавычки, чтобы избежать проблем с пробелами
     if platform.system() == 'Windows':
         command = f'"{updDir}\\update.bat"'
     elif platform.system() == 'Darwin':
@@ -1534,7 +1662,7 @@ TIME_THRESHOLD = 30
 
 def validate_time_based_key(provided_key: str, timestamp: str) -> bool:
     try:
-        # Convert timestamp to int and validate time threshold
+    
         current_time = int(time.time())
         timestamp_int = int(timestamp)
         
@@ -1547,7 +1675,6 @@ def validate_time_based_key(provided_key: str, timestamp: str) -> bool:
             hashlib.sha256
         ).hexdigest()
         
-        # Compare provided key with expected key
         return hmac.compare_digest(expected_key, provided_key)
         
     except Exception as e:
@@ -1571,12 +1698,10 @@ if __name__ == '__main__':
         flask_thread.daemon = True
         flask_thread.start()
 
-        # Запускаем batch file после старта Flask
         batch_file_thread = threading.Thread(target=run_batch_file)
         batch_file_thread.daemon = True
         batch_file_thread.start()
 
-        # Запускаем Telegram клиент
         run_telegram_client()
 
     except Exception as e:
