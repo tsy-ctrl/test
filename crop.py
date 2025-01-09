@@ -891,7 +891,7 @@ async def process_messages_for_author(
 ):
     
     with open('./id/id.txt', 'w') as id_file:
-        id_file.write(str(event.chat_id) if event is not None else str(chat_id_to_use))
+        id_file.write(str(event.chat_id) if event is not None else str(original_author))
 
     global last_author
     global isProcessing
@@ -1320,7 +1320,7 @@ async def process_messages_with_numbers(messages, client_id):
     with open('templates/output.html', 'a', encoding='utf-8') as f:
         f.write(buttons_div)
     
-    return messages_to_respond, messages[0].id if messages else None
+    return messages_to_respond,
 
 async def process_event(event):
     try:
@@ -1361,9 +1361,12 @@ async def process_event(event):
                     if message.sender_id != original_author:
                         break
                     messages.append(message)
-              
-                await process_messages_with_numbers(messages, get_client_id(event.client))
-                
+                   
+                messages_respond = await process_messages_with_numbers(messages, get_client_id(event.client))
+                messages_list = messages_respond[0]
+        
+                if any(msg_data['number'] > 1 for msg_data in messages_list):
+                    await event.message.edit(text="1")
                 isProcessing = False
 
             elif event.message.message == PROMO and event.message.sender_id == me.id and PROMO != "":
