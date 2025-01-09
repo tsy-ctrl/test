@@ -889,9 +889,6 @@ async def process_messages_for_author(
     chat_user=None,
     nickname=None
 ):
-    
-    with open('./id/id.txt', 'w') as id_file:
-        id_file.write(str(event.chat_id) if event is not None else str(original_author))
 
     global last_author
     global isProcessing
@@ -907,6 +904,9 @@ async def process_messages_for_author(
             chat_id_to_use = event.chat_id
         else:
             chat_id_to_use = message.chat_id
+
+    with open('./id/id.txt', 'w') as id_file:
+        id_file.write(str(event.chat_id) if event is not None else str(chat_id_to_use))
 
     if original_author != last_author:
         folder_path = "./images"
