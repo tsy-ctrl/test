@@ -119,10 +119,11 @@ def replace_text(text):
     text = test_hashtag(text)
     return text
 
-def delete_files_py():
-    retry_attempts=5
-    delay=1
+async def delete_files_py():
+    retry_attempts = 5
+    delay = 1
     try:
+        await asyncio.sleep(5)  
         while True:
             files = glob.glob(os.path.join(folder, '*'))
             if not files:
@@ -133,7 +134,7 @@ def delete_files_py():
                         send2trash(f)
                         break
                     except Exception as e:
-                        time.sleep(delay)  
+                        await asyncio.sleep(delay)
         return
     except Exception as e:
         print(f"Произошла ошибка: {e}")
@@ -223,7 +224,7 @@ def open_folder():
         return jsonify(message=str(e))
 
 def set_clipboard_files(file_paths):
-    paths_str = '","'.join(file_paths)  # Формируем строку с путями через запятую
+    paths_str = '","'.join(file_paths) 
     command = f'powershell Set-Clipboard -LiteralPath "{paths_str}"'
     os.system(command)
     print(f"Files {file_paths} copied to clipboard!")
@@ -269,13 +270,20 @@ def write_files():
 
 @app.route('/delete-files', methods=['POST'])
 def delete_files():
+    retry_attempts=5
+    delay=1
     try:
         while True:
             files = glob.glob(os.path.join(folder, '*'))
-            if not files: 
+            if not files:
                 break
             for f in files:
-                send2trash(f)
+                for attempt in range(retry_attempts):
+                    try:
+                        send2trash(f)
+                        break
+                    except Exception as e:
+                        time.sleep(delay)  
         return jsonify(message='All files deleted')
     except Exception:
         return jsonify()
@@ -576,7 +584,6 @@ async def process_message(message, message_index):
                             
                         output_video_path = f"images/{at_word if at_word else 'output_video'}.mp4"
                         
-                        # Проверяем существование видео
                         if file_exists(output_video_path):
                             print(f"Видео {output_video_path} уже существует, пропускаем обработку")
                             with open(output_video_path, 'rb') as video_file:
@@ -711,8 +718,7 @@ async def process_message(message, message_index):
 
             at_word, text = get_at_word(message)
             output_image_path = f"images/{at_word}.png"
-            
-            # Проверяем существование изображения
+
             if file_exists(output_image_path):
                 print(f"Изображение {output_image_path} уже существует, пропускаем обработку")
                 with open(output_image_path, 'rb') as img_file:
@@ -913,7 +919,7 @@ async def process_messages_for_author(
         for filename in os.listdir(folder_path):
             os.remove(os.path.join(folder_path, filename))
         if switch:  
-            delete_files_py()
+           asyncio.create_task(delete_files_py())
 
     last_author = original_author
     chat_user = ""
@@ -1260,7 +1266,6 @@ async def process_messages_with_numbers(messages, client_id):
     previous_was_text_only = False
     consecutive_text_count = 0
 
-    # Обработка новых сообщений
     for i, message in enumerate(messages):
         try:
             has_photo = message.media is not None
@@ -1292,13 +1297,10 @@ async def process_messages_with_numbers(messages, client_id):
         except Exception as e:
             print(e)
 
-    # Получаем список ID текущих сообщений
     current_message_ids = [msg['message_id'] for msg in messages_to_respond]
     
-    # Сравниваем списки ID
     if set(current_message_ids) != set(previous_message_ids):
         active_number = 1
-        # Обновляем хранилище в браузере через JavaScript
         buttons_div = f'''
             <script>
                 localStorage.setItem('activeButtonNumber', '1');
@@ -1307,10 +1309,8 @@ async def process_messages_with_numbers(messages, client_id):
         with open('templates/output.html', 'a', encoding='utf-8') as f:
             f.write(buttons_div)
     
-    # Обновляем previous_message_ids
     previous_message_ids = current_message_ids
 
-    # Отправляем номера сообщений в чат
     for msg_data in messages_to_respond:
         if msg_data['number'] > 1:
             await msg_data['message'].reply(str(msg_data['number']))
@@ -1394,18 +1394,10 @@ async def process_event(event):
                         for message in reversed(messages_to_forward[1:]):
                             await event.client.forward_messages(event.chat_id, message)
 
+            
             elif event.message.is_reply and event.message.message == FIX and event.message.sender_id == me.id and FIX != "":
                 replied_message = await event.message.get_reply_message()
                 original_author = replied_message.sender_id
-
-              
-                if original_author != last_author:
-                    folder_path = "./images"
-                    for filename in os.listdir(folder_path):
-                        os.remove(os.path.join(folder_path, filename))
-                    if switch:
-                        delete_files_py()
-                last_author = original_author
 
                 user = await event.client.get_entity(original_author)
                 try:
@@ -1419,14 +1411,13 @@ async def process_event(event):
                 except:
                     pass
 
-              
                 start_id = replied_message.id
                 messages_to_process = []
+                first_sent_message = None
 
                 async for message in event.client.iter_messages(event.chat_id, min_id=start_id - 1, reverse=True):
                     if message.sender_id != original_author:
                         break
-                
                     messages_to_process.append(message)
 
                 i = 0
@@ -1434,30 +1425,78 @@ async def process_event(event):
                     current_message = messages_to_process[i]
 
                     if current_message.media:
-                
-                        caption = ""
-                        if i + 1 < len(messages_to_process):
-                            next_message = messages_to_process[i + 1]
-                            if next_message.text:
-                                caption = next_message.text
-                                i += 1  
+                     
+                        if current_message.message:
+                            sent_message = await event.client.send_file(
+                                event.chat_id,
+                                file=current_message.media,
+                                caption=current_message.message
+                            )
+                            if first_sent_message is None:
+                                first_sent_message = sent_message
+                       
+                        else:
+                            caption = ""
+                            if i + 1 < len(messages_to_process):
+                                next_message = messages_to_process[i + 1]
+                                if next_message.text:
+                                    caption = next_message.text
+                                    i += 1
 
-                        await event.client.send_file(
-                            event.chat_id,
-                            file=current_message.media,
-                            caption=caption
-                        )
+                            sent_message = await event.client.send_file(
+                                event.chat_id,
+                                file=current_message.media,
+                                caption=caption
+                            )
+                            if first_sent_message is None:
+                                first_sent_message = sent_message
 
                     elif current_message.text:
-                    
-                        if i + 1 < len(messages_to_process) and messages_to_process[i + 1].text:
-                            break
-                        else:
-                            await event.client.send_message(
-                                event.chat_id,
-                                current_message.text
-                            )
+                       
+                        is_last_message = i == len(messages_to_process) - 1
+                       
+                        if not is_last_message:
+                            if i + 1 < len(messages_to_process) and messages_to_process[i + 1].text:
+                                break
+                            else:
+                                sent_message = await event.client.send_message(
+                                    event.chat_id,
+                                    current_message.text
+                                )
+                                if first_sent_message is None:
+                                    first_sent_message = sent_message
                     i += 1
+
+                
+                if first_sent_message:
+                    reply_message = await event.client.send_message(
+                        event.chat_id,
+                        MESSAGE,
+                        reply_to=first_sent_message.id
+                    )
+                    
+                    stored_first_message = first_sent_message
+                    
+                    class AsyncReplyMessage:
+                        async def get_reply_message(self):
+                            return stored_first_message
+                        
+                        async def edit(self, **kwargs):
+                            return await reply_message.edit(**kwargs)
+
+                    new_event = type('Event', (), {
+                        'is_private': event.is_private,
+                        'client': event.client,
+                        'chat_id': event.chat_id,
+                        'message': AsyncReplyMessage()
+                    })()
+                    
+                    new_event.message.is_reply = True
+                    new_event.message.message = MESSAGE
+                    new_event.message.sender_id = me.id
+                    new_event.message.id = reply_message.id
+                    
+                    await process_event(new_event)
 
             elif event.message.is_reply and event.message.message == LINK and event.message.sender_id == me.id and LINK != "":
                     replied_message = await event.message.get_reply_message()
@@ -1531,12 +1570,6 @@ async def process_event(event):
                                     
                                     chat_user = await event.client.get_entity(event.chat_id)
                                     nickname = ' '.join(chat_user.first_name.split()[:2]) if hasattr(chat_user, 'first_name') else 'Unknown'
-
-                                    folder_path = "./images"
-                                    for filename in os.listdir(folder_path):
-                                        os.remove(os.path.join(folder_path, filename))
-                                    if switch:  
-                                        delete_files_py()
                                     
                                     await process_messages_for_author(
                                         message=first_forwarded_msg, 
