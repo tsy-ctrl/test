@@ -591,7 +591,7 @@ async def process_message(message, message_index):
                                 video_base64 = base64.b64encode(video_bytes).decode()
                             media_id = f'media_{uuid.uuid4().hex[:8]}'
                             with open(output_file, 'a', encoding='utf-8') as f:
-                                f.write(f'<div style="position: relative; display: flex; flex-direction: column">')
+                                f.write(f'<div class="main-container">')
                                 f.write(f'<video id="{media_id}" controls src="data:video/mp4;base64,{video_base64}" width="310"></video>')
                                 f.write(f'<div class="image-number"></div>')
                                 f.write(f'<div class="media-controls">')
@@ -621,7 +621,7 @@ async def process_message(message, message_index):
                             video_base64 = base64.b64encode(video_bytes).decode()
                         media_id = f'media_{uuid.uuid4().hex[:8]}'
                         with open(output_file, 'a', encoding='utf-8') as f:
-                            f.write(f'<div style="position: relative; display: flex; flex-direction: column">')
+                            f.write(f'<div class="main-container">')
                             f.write(f'<video id="{media_id}" controls src="data:video/mp4;base64,{video_base64}" width="310"></video>')
                             f.write(f'<div class="image-number"></div>') 
                             f.write(f'<div class="media-controls">')
@@ -655,7 +655,7 @@ async def process_message(message, message_index):
                                     gif_base64 = base64.b64encode(gif_bytes).decode()
                                 media_id = f'media_{uuid.uuid4().hex[:8]}'
                                 with open(output_file, 'a', encoding='utf-8') as f:
-                                    f.write(f'<div style="position: relative; display: flex; flex-direction: column">')
+                                    f.write(f'<div class="main-container">')
                                     f.write(f'<img id="{media_id}" src="data:image/gif;base64,{gif_base64}" width="310" />')
                                     f.write(f'<div class="image-number"></div>')
                                     f.write(f'<div class="media-controls">')
@@ -686,7 +686,7 @@ async def process_message(message, message_index):
                                 gif_base64 = base64.b64encode(gif_bytes).decode()
                             media_id = f'media_{uuid.uuid4().hex[:8]}'
                             with open(output_file, 'a', encoding='utf-8') as f:
-                                f.write(f'<div style="position: relative; display: flex; flex-direction: column">')
+                                f.write(f'<div class="main-container">')
                                 f.write(f'<img id="{media_id}" src="data:image/gif;base64,{gif_base64}" width="310" />')
                                 f.write(f'<div class="image-number"></div>')
                                 f.write(f'<div class="media-controls">')
@@ -726,7 +726,7 @@ async def process_message(message, message_index):
                     img_str = base64.b64encode(img_bytes).decode()
                 media_id = f'media_{uuid.uuid4().hex[:8]}'
                 with open(output_file, 'a', encoding='utf-8') as f:
-                    f.write(f'<div style="position: relative; display: flex; flex-direction: column">')
+                    f.write(f'<div class="main-container">')
                     f.write(f'<img id="{media_id}" src="data:image/png;base64,{img_str}" />')
                     f.write(f'<div class="image-number"></div>')
                     f.write(f'<div class="media-controls">')
@@ -749,7 +749,7 @@ async def process_message(message, message_index):
             output_image_path = f"images/{at_word}.png"
 
             with open(output_file, 'a', encoding='utf-8') as f:
-                f.write(f'<div style="position: relative; display: flex; flex-direction: column">')
+                f.write(f'<div class="main-container">')
                 f.write(f'<img id="{media_id}" src="data:image/{file_format.lower()};base64,{img_str}" />')
                 f.write(f'<div class="image-number"></div>')
                 f.write(f'<div class="media-controls">')
