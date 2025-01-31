@@ -53,6 +53,12 @@ last_author = None
 
 buttons_div = ''
 
+processed_media_hashes = []
+
+def clear_media_hashes():
+        global processed_media_hashes
+        processed_media_hashes = []
+
 with open('templates/output.html', 'w', encoding='utf-8') as f:
     f.write("""
     <!DOCTYPE html>
@@ -567,24 +573,41 @@ async def process_message(message, message_index):
             </script>
             """)
             return at_word
+        
+    def get_media_hash(media_data):
+        sha256_hash = hashlib.sha256()
+        media_data.seek(0)
+        sha256_hash.update(media_data.read())
+        media_data.seek(0)
+        return sha256_hash.hexdigest()
 
-    def file_exists(filename):
-        return os.path.exists(filename) and os.path.getsize(filename) > 0
+    def file_exists(media_data):
+        global processed_media_hashes
+        
+        media_hash = get_media_hash(media_data)
+
+        if media_hash in processed_media_hashes:
+            return True
+        else:
+            processed_media_hashes.append(media_hash)
+            
+        return False
     
     output_file = f'templates/output_{message_index}.html'
     output_main_file = f'templates/output.html'
     try:
         if message.media:
+            media_data = await message.download_media(file=BytesIO())
             if hasattr(message.media, 'document'):
                 for attr in message.media.document.attributes:
                     if isinstance(attr, DocumentAttributeVideo):
                         at_word = ''
                         if message.text:
                             at_word, text = get_at_word(message)
-                            
+                        
                         output_video_path = f"images/{at_word if at_word else 'output_video'}.mp4"
                         
-                        if file_exists(output_video_path):
+                        if file_exists(media_data):
                             print(f"Видео {output_video_path} уже существует, пропускаем обработку")
                             with open(output_video_path, 'rb') as video_file:
                                 video_bytes = video_file.read()
@@ -605,7 +628,6 @@ async def process_message(message, message_index):
                                 write_to_output(message, output_file, output_main_file)
                             return
 
-                        media_data = await message.download_media(file=BytesIO())
                         temp_video_path = f'images/{uuid.uuid4()}_temp_video.mp4'
                         with open(temp_video_path, 'wb') as temp_video_file:
                             temp_video_file.write(media_data.getvalue())
@@ -648,7 +670,7 @@ async def process_message(message, message_index):
                             output_gif_path = f"images/{at_word if at_word else f'output_gif_{uuid.uuid4()}'}.gif"
                             
                             # Проверяем существование GIF
-                            if file_exists(output_gif_path):
+                            if file_exists(media_data):
                                 print(f"GIF {output_gif_path} уже существует, пропускаем обработку")
                                 with open(output_gif_path, 'rb') as gif_file:
                                     gif_bytes = gif_file.read()
@@ -669,7 +691,6 @@ async def process_message(message, message_index):
                                     write_to_output(message, output_file, output_main_file)
                                 return
 
-                            media_data = await message.download_media(file=BytesIO())
                             gif_path = f'images/{uuid.uuid4()}_temp_image.gif'
                             with open(gif_path, 'wb') as gif_file:
                                 gif_file.write(media_data.getvalue())
@@ -702,8 +723,7 @@ async def process_message(message, message_index):
                             if os.path.exists(gif_path):
                                 os.remove(gif_path)
                             return
-
-            media_data = await message.download_media(file=BytesIO())
+                        
             img = Image.open(media_data)
             img = correct_orientation(img)
             width, height = img.size
@@ -719,7 +739,7 @@ async def process_message(message, message_index):
             at_word, text = get_at_word(message)
             output_image_path = f"images/{at_word}.png"
 
-            if file_exists(output_image_path):
+            if file_exists(media_data):
                 print(f"Изображение {output_image_path} уже существует, пропускаем обработку")
                 with open(output_image_path, 'rb') as img_file:
                     img_bytes = img_file.read()
@@ -918,6 +938,7 @@ async def process_messages_for_author(
         folder_path = "./images"
         for filename in os.listdir(folder_path):
             os.remove(os.path.join(folder_path, filename))
+        clear_media_hashes()
         if switch:  
            asyncio.create_task(delete_files_py())
 
