@@ -11,12 +11,12 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3  # Загружает код из репозитория
+      uses: actions/checkout@v4  # Загружает код из репозитория
 
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: 3.11  # Версия Python
+        python-version: 3.12  # Версия Python
 
     - name: Install dependencies
       run: |
