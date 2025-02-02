@@ -369,29 +369,67 @@ def delete_files_one():
     except Exception:
           return jsonify()
 
-@app.route('/check-files', methods=['GET'])
-def check_files():
-    files = len(glob.glob(os.path.join(folder, '*')))
+class FolderMonitor:
+    def __init__(self):
+        self.last_modified_time = 0
+        self.cached_result = None
+        
+    def get_folder_modified_time(self, folder_path):
 
-    images_folder = "./images"
+        max_mtime = os.path.getmtime(folder_path)
+        
+        for root, _, files in os.walk(folder_path):
+            for f in files:
+                full_path = os.path.join(root, f)
+                max_mtime = max(max_mtime, os.path.getmtime(full_path))
+                
+        return max_mtime
 
-    def sizeof_fmt(num):
+    def sizeof_fmt(self, num):
         for unit in ['B', 'KB', 'MB', 'GB']:
             if abs(num) < 1024.0:
-                return f"{num:.1f} {unit}"  
+                return f"{num:.1f} {unit}"
             num /= 1024.0
         return f"{num:.1f} TB"
 
-    count = 0
-    size = 0
-    if os.path.exists(images_folder):
-        for f in os.listdir(images_folder):
-            fp = os.path.join(images_folder, f)
-            if os.path.isfile(fp):
-                count += 1
-                size += os.path.getsize(fp)
+    def calculate_folder_stats(self, main_folder, images_folder):
+        files = len(glob.glob(os.path.join(main_folder, '*')))
+        
+        count = 0
+        size = 0
+        if os.path.exists(images_folder):
+            for f in os.listdir(images_folder):
+                fp = os.path.join(images_folder, f)
+                if os.path.isfile(fp):
+                    count += 1
+                    size += os.path.getsize(fp)
+                    
+        return {
+            'files': files,
+            'count': count,
+            'size': self.sizeof_fmt(size)
+        }
 
-    return jsonify(files = files, count=count, size=sizeof_fmt(size))
+    def check_files(self, main_folder=None, images_folder="./images"):
+
+        main_folder = os.getenv('FOLDER')
+
+        current_mtime = max(
+            self.get_folder_modified_time(main_folder),
+            self.get_folder_modified_time(images_folder)
+        )
+        
+        if current_mtime > self.last_modified_time or self.cached_result is None:
+            self.cached_result = self.calculate_folder_stats(main_folder, images_folder)
+            self.last_modified_time = current_mtime
+            
+        return jsonify(self.cached_result)
+
+folder_monitor = FolderMonitor()
+
+@app.route('/check-files', methods=['GET'])
+def check_files():
+    return folder_monitor.check_files()
 
 @app.route('/update_hints', methods=['POST'])
 def update_hints():
