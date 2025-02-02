@@ -14,7 +14,6 @@ import time
 import hmac
 import random
 import hashlib
-from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 from telethon import TelegramClient
 from flask import Flask, render_template, url_for, request, jsonify
@@ -47,17 +46,45 @@ sys.stdout.flush()
 
 templatesDir = os.getcwd() + '/templates'
 staticDir = os.getcwd() + '/static'
+HASHES_FILE = os.path.join("files", "processed_media_hashes.json")
 
-app = Flask(__name__, template_folder=templatesDir, static_folder=staticDir)
+app = Flask(__name__, template_folder=templatesDir, static_folder=staticDir)\
+
 last_author = None
-
 buttons_div = ''
-
+AUTO_DELETE_ENABLED = False
 processed_media_hashes = []
 
-def clear_media_hashes():
-        global processed_media_hashes
+def load_hashes():
+    global processed_media_hashes
+    try:
+        if os.path.exists(HASHES_FILE):
+            with open(HASHES_FILE, 'r', encoding='utf-8') as f:
+                processed_media_hashes = json.load(f)
+        else:
+            processed_media_hashes = []
+    except Exception as e:
+        print(f"Error loading hashes: {e}")
         processed_media_hashes = []
+
+load_hashes()
+
+def save_hashes():
+    try:
+        with open(HASHES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(processed_media_hashes, f, indent=2)
+    except Exception as e:
+        print(f"Error saving hashes: {e}")
+
+def clear_media_hashes():
+    global processed_media_hashes
+    processed_media_hashes = []
+    try:
+        os.remove(HASHES_FILE)
+    except Exception as e:
+        pass
+    finally:
+        save_hashes()
 
 with open('templates/output.html', 'w', encoding='utf-8') as f:
     f.write("""
@@ -297,22 +324,38 @@ def delete_files():
 switch = False
 
 def update_html(switch):
-    with open('templates/output.html', 'r', encoding='utf-8') as f:
+    with open('templates/output.html', 'r+', encoding='utf-8') as f:
         html = f.read()
-
-    old_str = f'switchAutoDelete()" style="background-color: {"red" if switch else "#488b5b"}'
-    new_str = f'switchAutoDelete()" style="background-color: {"#488b5b" if switch else "red"}'
-    html = html.replace(old_str, new_str)
-
-    with open('templates/output.html', 'w', encoding='utf-8') as f:
+        old_str = f'switchAutoDelete()" style="background-color: {"red" if switch else "#488b5b"}'
+        new_str = f'switchAutoDelete()" style="background-color: {"#488b5b" if switch else "red"}'
+        html = html.replace(old_str, new_str)
+        f.seek(0)
         f.write(html)
+        f.truncate()
+
+def update_auto_delete_html(enabled):
+    with open('templates/output.html', 'r+', encoding='utf-8') as f:
+        html = f.read()
+        old_class = 'toggle-switch {}'.format('active' if not enabled else '')
+        new_class = 'toggle-switch {}'.format('active' if enabled else '')
+        html = html.replace(old_class, new_class)
+        f.seek(0)
+        f.write(html)
+        f.truncate()
 
 @app.route('/switch-auto-delete', methods=['POST'])
 def switch_auto_delete():
      global switch
      switch = not switch
      update_html(switch)
-     return jsonify(message=f'Autodelete is now {"on" if switch else "off"}')
+     return jsonify(message=f'Autodelete ss is {"on" if switch else "off"}')
+
+@app.route('/toggle_auto_delete', methods=['POST'])
+def toggle_auto_delete():
+    global AUTO_DELETE_ENABLED
+    AUTO_DELETE_ENABLED = not AUTO_DELETE_ENABLED
+    update_auto_delete_html(AUTO_DELETE_ENABLED)
+    return jsonify(message=f'Autodelete images is now {"on" if AUTO_DELETE_ENABLED else "off"}', enabled=AUTO_DELETE_ENABLED)
 
 @app.route('/delete-files-one', methods=['POST'])
 def delete_files_one():
@@ -329,7 +372,26 @@ def delete_files_one():
 @app.route('/check-files', methods=['GET'])
 def check_files():
     files = len(glob.glob(os.path.join(folder, '*')))
-    return {'files': files}
+
+    images_folder = "./images"
+
+    def sizeof_fmt(num):
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if abs(num) < 1024.0:
+                return f"{num:.1f} {unit}"  
+            num /= 1024.0
+        return f"{num:.1f} TB"
+
+    count = 0
+    size = 0
+    if os.path.exists(images_folder):
+        for f in os.listdir(images_folder):
+            fp = os.path.join(images_folder, f)
+            if os.path.isfile(fp):
+                count += 1
+                size += os.path.getsize(fp)
+
+    return jsonify(files = files, count=count, size=sizeof_fmt(size))
 
 @app.route('/update_hints', methods=['POST'])
 def update_hints():
@@ -488,8 +550,6 @@ def add_hint():
     except Exception as e:
         print(e)
         return jsonify({"success": False, "message": str(e)})
-    
-executor = ThreadPoolExecutor(max_workers=1)
 
 @app.route('/')
 def index():
@@ -583,14 +643,13 @@ async def process_message(message, message_index):
 
     def file_exists(media_data):
         global processed_media_hashes
-        
         media_hash = get_media_hash(media_data)
-
         if media_hash in processed_media_hashes:
             return True
         else:
             processed_media_hashes.append(media_hash)
-            
+            save_hashes()
+
         return False
     
     output_file = f'templates/output_{message_index}.html'
@@ -915,7 +974,6 @@ async def process_messages_for_author(
     chat_user=None,
     nickname=None
 ):
-
     global last_author
     global isProcessing
 
@@ -933,13 +991,13 @@ async def process_messages_for_author(
 
     with open('./id/id.txt', 'w') as id_file:
         id_file.write(str(event.chat_id) if event is not None else str(chat_id_to_use))
-
-    if original_author != last_author:
+    
+    if original_author != last_author and AUTO_DELETE_ENABLED: 
         folder_path = "./images"
         for filename in os.listdir(folder_path):
             os.remove(os.path.join(folder_path, filename))
         clear_media_hashes()
-        if switch:  
+    if original_author != last_author and switch:  
            asyncio.create_task(delete_files_py())
 
     last_author = original_author
@@ -1218,13 +1276,23 @@ async def process_messages_for_author(
                             is_checked = (not personal_hints and general_hint == default_general_hint)
                             hints_html += generate_hint_item(general_hint, is_checked, chat_id_to_use, 'general')
 
-                    hints_html += '''
-                        </div>
-                    </div>
-                    '''
+                    hints_html += '''</div></div>'''
 
                 output_file.write(hints_html)
-                
+            
+                output_file.write(f'''
+                <div class="auto-delete-container">
+                    <div class="toggle-switch {'active' if AUTO_DELETE_ENABLED else ''}" 
+                        onclick="toggleAutoDelete()"
+                        style="background-color: {'#488b5b' if AUTO_DELETE_ENABLED else '#d9534f'}">
+                        <div class="slider"></div>
+                    </div>
+                    <div class="file-stats">
+                        <span id="file-count">0</span>files | <span id="file-size">0 B</span>
+                    </div>
+                </div>
+                ''')
+                 
             except Exception as e:
                 output_file.write(f'<div class="error-message">Error loading hints: {str(e)}</div>')
 
