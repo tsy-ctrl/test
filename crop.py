@@ -443,12 +443,11 @@ def update_hints():
        hints_path = os.path.join('..', 'files', 'hints',
            'hints.json' if hint_type == 'personal' else 'allhints.json')
        
-       chat_id = data.get('chat_id') if hint_type == 'personal' else None
+       chat_id = data.get('chat_id')
       
        with open(hints_path, 'r') as f:
            hints_data = json.load(f)
        
-   
        if hint_type == 'personal':
            if str(chat_id) in hints_data:
              
@@ -482,23 +481,26 @@ def update_hints():
        
 
        else:
-           if action == 'delete':
+            if action == 'delete':
                if hint_key in hints_data.get('hints', []):
                    hints_data['hints'].remove(hint_key)
                    
                    if hints_data.get('checkbox') == hint_key:
                        hints_data['checkbox'] = ''
            
-           elif action == 'update':
-               hints_data['checkbox'] = hint_key
-               
-               hints_hints_path = os.path.join('..', 'files', 'hints', 'hints.json')
-               with open(hints_hints_path, 'r') as f:
-                   hints_hints_data = json.load(f)
-               
-               for chat_id in hints_hints_data:
-                   if 'checkbox' in hints_hints_data[chat_id]:
-                       hints_hints_data[chat_id]['checkbox'] = ''
+            elif action == 'update':
+                hints_data['checkbox'] = hint_key
+                
+                hints_hints_path = os.path.join('..', 'files', 'hints', 'hints.json')
+                with open(hints_hints_path, 'r') as f:
+                    hints_hints_data = json.load(f)
+                
+                for chat_id in hints_hints_data:
+                    if 'checkbox' in hints_hints_data[chat_id]:
+                        hints_hints_data[chat_id]['checkbox'] = ''
+                
+                with open(hints_hints_path, 'w') as f:
+                    json.dump(hints_hints_data, f, indent=4, ensure_ascii=False)
 
        with open(hints_path, 'w') as f:
            json.dump(hints_data, f, indent=4, ensure_ascii=False)
@@ -524,70 +526,90 @@ def update_hints():
 @app.route('/add-hint', methods=['POST'])
 def add_hint():
     data = request.json
-    new_hint_key = data.get('hint_key')
+    new_hint_key = data.get('hint_key', '').strip()
     hint_type = data.get('hint_type', 'personal')
     
+    if not new_hint_key:
+        return jsonify({"success": False, "message": "Пустой ключ подсказки"}), 400
+
     hints_path = os.path.join('..', 'files', 'hints',
-        'hints.json' if hint_type == 'personal' else 'allhints.json')
+                            'hints.json' if hint_type == 'personal' else 'allhints.json')
     
     try:
         with open(hints_path, 'r', encoding='utf-8') as hints_file:
             hints_data = json.load(hints_file)
-        
+
         if hint_type == 'personal':
             chat_id = str(data.get('chat_id'))
             message_count = int(data.get('message_count', 0))
-            
             if chat_id not in hints_data:
                 hints_data[chat_id] = {'now': False}
-            
+            else:
+                existing_hints = [k for k in hints_data[chat_id].keys() 
+                                if k not in ['now', 'checkbox']]
+                if new_hint_key in existing_hints:
+                    return jsonify({
+                        "success": False,
+                        "message": "Персональная подсказка уже существует"
+                    }), 400
+
             hint_parts = new_hint_key.split()
             if len(hint_parts) > 1:
-                second_part = int(hint_parts[1])
-                if second_part == message_count:
-                    hints_data[chat_id]['now'] = True
-                elif second_part == message_count * 2:
-                    hints_data[chat_id]['now'] = False
-                else:
-                    hint_parts[1] = str(message_count)
-                    hints_data[chat_id]['now'] = True
-                new_hint_key = ' '.join(hint_parts)
-            
+                try:
+                    second_part = int(hint_parts[1])
+                    if second_part == message_count:
+                        hints_data[chat_id]['now'] = True
+                    elif second_part == message_count * 2:
+                        hints_data[chat_id]['now'] = False
+                    else:
+                        hint_parts[1] = str(message_count)
+                        hints_data[chat_id]['now'] = True
+                        new_hint_key = ' '.join(hint_parts)
+                except ValueError:
+                    pass
+
+            if new_hint_key in hints_data[chat_id]:
+                return jsonify({
+                    "success": False,
+                    "message": "Персональная подсказка уже существует"
+                }), 400
+
             hints_data[chat_id][new_hint_key] = 0
-            
-            if 'checkbox' not in hints_data[chat_id] or not hints_data[chat_id].get('checkbox'):
-                non_service_keys = [
-                    key for key in hints_data[chat_id].keys() 
-                    if key not in ['now', 'checkbox']
-                ]
+
+            if not hints_data[chat_id].get('checkbox'):
+                non_service_keys = [k for k in hints_data[chat_id].keys() 
+                                  if k not in ['now', 'checkbox']]
                 if non_service_keys:
                     hints_data[chat_id]['checkbox'] = non_service_keys[0]
-            
-            result_key = new_hint_key
-        
+
         else:
             if 'hints' not in hints_data:
                 hints_data['hints'] = []
-          
-            if new_hint_key not in hints_data['hints']:
-                hints_data['hints'].append(new_hint_key)
+                
+            if new_hint_key in hints_data['hints']:
+                return jsonify({
+                    "success": False,
+                    "message": "Общая подсказка уже существует"
+                }), 400
+                
+            hints_data['hints'].append(new_hint_key)
             
             if not hints_data.get('checkbox'):
                 hints_data['checkbox'] = new_hint_key
-            
-            result_key = new_hint_key
-        
+
         with open(hints_path, 'w', encoding='utf-8') as hints_file:
-            json.dump(hints_data, hints_file, indent=4)
-        
+            json.dump(hints_data, hints_file, indent=4, ensure_ascii=False)
+
         return jsonify({
             "success": True, 
-            "full_hint_key": result_key
+            "full_hint_key": new_hint_key
         })
-    
+
     except Exception as e:
-        print(e)
-        return jsonify({"success": False, "message": str(e)})
+        print(f"Ошибка при добавлении подсказки. ")
+        return jsonify({
+            "success": False
+        }), 500
 
 @app.route('/')
 def index():
@@ -1078,6 +1100,18 @@ async def process_messages_for_author(
             </head>
             <body onload="setInterval('checkFiles(`{nickname}`)', 1000)">
             <div class="header">
+                        <div class="info-tooltip-container">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="info-icon">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="12" y1="16" x2="12" y2="12"></line>
+                                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                            </svg>
+                            <div class="tooltip-text">
+                                Press enter in "main" script to make a post with chosen time. Press 
+                                <span class="blue">blue</span> / <span class="orange">orange</span> + to add new 
+                                <span class="personal">personal</span> / <span class="general">general</span> time. 
+                            </div>
+            </div>   
             <div class="button1" onclick="deleteOneFile()">1</div>
             <div class="button3" onclick="switchAutoDelete()" style="background-color: {get_color(switch)};"></div>
             <div class="button2" onclick="deleteFiles()">
@@ -1164,23 +1198,19 @@ async def process_messages_for_author(
                     </div>
                 </div>
                 '''
-
+            
             try:
                 with open(hints_path, 'r', encoding='utf-8') as hints_file:
                     hints_data = json.load(hints_file)
                 
-                # Загружаем общие подсказки
                 try:
                     with open(allhints_path, 'r', encoding='utf-8') as allhints_file:
                         allhints_data = json.load(allhints_file)
-                except FileNotFoundError:
-                    allhints_data = {'hints': [], 'checkbox': ''}
-                except json.JSONDecodeError:
+                except (FileNotFoundError, json.JSONDecodeError):
                     allhints_data = {'hints': [], 'checkbox': ''}
 
                 chat_hints = hints_data.get(str(chat_id_to_use), {})
                 
-                # Восстановленный функционал замены подсказок
                 old_checkbox = chat_hints.get('checkbox', '')
                 if 'now' in chat_hints:
                     non_service_keys = [key for key in chat_hints.keys() if key not in ['now', 'checkbox']]
@@ -1204,12 +1234,16 @@ async def process_messages_for_author(
                             new_chat_hints[key] = value
                     
                     non_service_new_keys = [key for key in new_chat_hints.keys() if key not in ['now', 'checkbox']]
-                    if checkbox_index != -1 and checkbox_index < len(non_service_new_keys):
-                        new_chat_hints['checkbox'] = non_service_new_keys[checkbox_index]
-                    elif non_service_new_keys:
-                        new_chat_hints['checkbox'] = non_service_new_keys[0] if non_service_new_keys else ''
+                    
+                    if not allhints_data.get('checkbox'):
+                        if checkbox_index != -1 and checkbox_index < len(non_service_new_keys):
+                            new_chat_hints['checkbox'] = non_service_new_keys[checkbox_index]
+                        elif non_service_new_keys:
+                            new_chat_hints['checkbox'] = non_service_new_keys[0]
+                        else:
+                            new_chat_hints['checkbox'] = ''
                     else:
-                        new_chat_hints.pop('checkbox', None)
+                        new_chat_hints['checkbox'] = ''
                     
                     chat_hints = new_chat_hints
                     hints_data[str(chat_id_to_use)] = chat_hints
@@ -1277,28 +1311,13 @@ async def process_messages_for_author(
                             </button>
                         </div>
                         ''' if total_hints >= 2 else ''}
-                        <div class="info-tooltip-container">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="info-icon">
-                                <circle cx="12" cy="12" r="10"></circle>
-                                <line x1="12" y1="16" x2="12" y2="12"></line>
-                                <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                            </svg>
-                            <div class="tooltip-text">
-                                Press enter in "main" script to make a post with chosen time. Press 
-                                <span class="blue">blue</span> / <span class="orange">orange</span> + to add new 
-                                <span class="personal">personal</span> / <span class="general">general</span> time. 
-                            </div>
-                        </div>
                         <div class="hints-wrapper">
                     '''
                     default_hint = chat_hints.get('checkbox', '')
                     if default_hint in personal_hints:
                         hints_html += generate_hint_item(default_hint, True, chat_id_to_use, 'personal')
                         personal_hints.remove(default_hint)
-                    elif allhints_data.get('checkbox', '') and not personal_hints:
-                        default_general = allhints_data['checkbox']
-                        hints_html += generate_hint_item(default_general, True, chat_id_to_use, 'general')
-
+                        
                     usage_sorted_hints = sorted(
                         [(hint, chat_hints.get(hint, 0)) for hint in personal_hints],
                         key=lambda x: x[1],
@@ -1311,7 +1330,7 @@ async def process_messages_for_author(
                     if allhints_data.get('hints'):
                         default_general_hint = allhints_data.get('checkbox', '')
                         for general_hint in allhints_data['hints']:
-                            is_checked = (not personal_hints and general_hint == default_general_hint)
+                            is_checked = (general_hint == default_general_hint and default_general_hint != '')
                             hints_html += generate_hint_item(general_hint, is_checked, chat_id_to_use, 'general')
 
                     hints_html += '''</div></div>'''
