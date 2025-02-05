@@ -53,32 +53,32 @@ app = Flask(__name__, template_folder=templatesDir, static_folder=staticDir)\
 last_author = None
 buttons_div = ''
 AUTO_DELETE_ENABLED = False
-processed_media_hashes = []
+processed_media_hashes = set()
 
 def load_hashes():
     global processed_media_hashes
     try:
         if os.path.exists(HASHES_FILE):
             with open(HASHES_FILE, 'r', encoding='utf-8') as f:
-                processed_media_hashes = json.load(f)
+                processed_media_hashes = set(json.load(f))
         else:
-            processed_media_hashes = []
+            processed_media_hashes = set()
     except Exception as e:
         print(f"Error loading hashes: {e}")
-        processed_media_hashes = []
+        processed_media_hashes = set()  
 
 load_hashes()
 
 def save_hashes():
     try:
         with open(HASHES_FILE, 'w', encoding='utf-8') as f:
-            json.dump(processed_media_hashes, f, indent=2)
+            json.dump(list(processed_media_hashes), f)
     except Exception as e:
         print(f"Error saving hashes: {e}")
 
 def clear_media_hashes():
     global processed_media_hashes
-    processed_media_hashes = []
+    processed_media_hashes.clear()
     try:
         os.remove(HASHES_FILE)
     except Exception as e:
@@ -701,15 +701,15 @@ async def process_message(message, message_index):
         media_data.seek(0)
         return sha256_hash.hexdigest()
 
-    def file_exists(media_data):
+    def file_exists(media_data, output_path):
         global processed_media_hashes
         media_hash = get_media_hash(media_data)
-        if media_hash in processed_media_hashes:
+        
+        if (media_hash in processed_media_hashes) and (os.path.exists(output_path)):
             return True
-        else:
-            processed_media_hashes.append(media_hash)
-            save_hashes()
-
+            
+        processed_media_hashes.add(media_hash)
+        save_hashes()
         return False
     
     output_file = f'templates/output_{message_index}.html'
@@ -726,7 +726,7 @@ async def process_message(message, message_index):
                         
                         output_video_path = f"images/{at_word if at_word else 'output_video'}.mp4"
                         
-                        if file_exists(media_data):
+                        if file_exists(media_data, output_video_path):
                             print(f"Видео {output_video_path} уже существует, пропускаем обработку")
                             with open(output_video_path, 'rb') as video_file:
                                 video_bytes = video_file.read()
@@ -789,7 +789,7 @@ async def process_message(message, message_index):
                             output_gif_path = f"images/{at_word if at_word else f'output_gif_{uuid.uuid4()}'}.gif"
                             
                             # Проверяем существование GIF
-                            if file_exists(media_data):
+                            if file_exists(media_data, output_gif_path):
                                 print(f"GIF {output_gif_path} уже существует, пропускаем обработку")
                                 with open(output_gif_path, 'rb') as gif_file:
                                     gif_bytes = gif_file.read()
@@ -858,7 +858,7 @@ async def process_message(message, message_index):
             at_word, text = get_at_word(message)
             output_image_path = f"images/{at_word}.png"
 
-            if file_exists(media_data):
+            if file_exists(media_data, output_image_path):
                 print(f"Изображение {output_image_path} уже существует, пропускаем обработку")
                 with open(output_image_path, 'rb') as img_file:
                     img_bytes = img_file.read()
