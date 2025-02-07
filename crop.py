@@ -312,27 +312,33 @@ def set_clipboard_files_mac(file_paths):
     try:
         file_aliases = []
         for path in file_paths:
+            if os.path.basename(path) == '.DS_Store':
+                continue
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Файл не найден: {path}")
             abs_path = os.path.abspath(path)
-
+            # Экранируем кавычки и обратные слэши
             abs_path = abs_path.replace('"', r'\"').replace('\\', r'\\')
-
+            # Формируем строку для AppleScript с указанием alias
             file_aliases.append(f'POSIX file "{abs_path}" as alias')
 
+        if not file_aliases:
+            raise Exception("Нет файлов для копирования после фильтрации.")
+
         file_list = ", ".join(file_aliases)
-        print(file_list)
+        print("file_list:", file_list)
+
         script = f'''
             set fileList to {{{file_list}}}
             tell application "Finder"
                 activate
-                set selection to fileList
+                select fileList
             end tell
-            delay 0.5
+            delay 1.0
             tell application "System Events"
                 keystroke "c" using command down
             end tell
-            delay 0.2
+            delay 0.5
         '''
         
         result = subprocess.run(['osascript', '-e', script],
