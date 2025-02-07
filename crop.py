@@ -385,6 +385,37 @@ def copy_files():
         return jsonify(message='Files copied to clipboard!')
     except Exception as e:
         return jsonify(message=str(e)), 500
+    
+@app.route('/copy-video', methods=['POST'])
+def copy_video():
+    try:
+        
+        system = platform.system()
+        if system not in ('Windows', 'Darwin'):
+            return jsonify(message='Unsupported OS'), 400
+
+        # Получаем данные из запроса
+        data = request.get_json()
+        video_path = data.get('path')
+        if not video_path:
+            return jsonify(message='No video path provided'), 400
+
+        # Проверяем, что файл существует
+        if not os.path.exists(video_path):
+            return jsonify(message='Video file not found!'), 404
+
+        # Формируем массив с одним видеофайлом
+        file_paths = [video_path]
+
+        # Вызываем соответствующую функцию копирования в зависимости от ОС
+        if system == 'Windows':
+            set_clipboard_files(file_paths)
+        elif system == 'Darwin':
+            set_clipboard_files_mac(file_paths)
+
+        return jsonify(message='Video copied to clipboard!')
+    except Exception as e:
+        return jsonify(message=str(e)), 500
 
 @app.route('/sendFiles', methods=['POST'])
 def write_files():
