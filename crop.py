@@ -6,14 +6,15 @@ import json
 import html
 import threading
 import asyncio
-from io import BytesIO
 import glob
 import platform
 import re
 import time
+import shutil
 import hmac
 import random
 import hashlib
+from io import BytesIO
 from urllib.parse import urlparse
 from telethon import TelegramClient
 from flask import Flask, render_template, url_for, request, jsonify
@@ -46,7 +47,6 @@ sys.stdout.flush()
 
 templatesDir = os.getcwd() + '/templates'
 staticDir = os.getcwd() + '/static'
-HASHES_FILE = os.path.join("files", "processed_media_hashes.json")
 
 app = Flask(__name__, template_folder=templatesDir, static_folder=staticDir)\
 
@@ -55,36 +55,80 @@ buttons_div = ''
 AUTO_DELETE_ENABLED = False
 processed_media_hashes = set()
 
-def load_hashes():
-    global processed_media_hashes
-    try:
-        if os.path.exists(HASHES_FILE):
-            with open(HASHES_FILE, 'r', encoding='utf-8') as f:
-                processed_media_hashes = set(json.load(f))
-        else:
-            processed_media_hashes = set()
-    except Exception as e:
-        print(f"Error loading hashes: {e}")
-        processed_media_hashes = set()  
+class FileHashManager:
+    def __init__(self):
+        self.HASHES_FILE = os.path.join("files", "processed_media_hashes.json")
+        self.processed_media_hashes = {}
+        self.load_hashes()
 
-load_hashes()
+    def load_hashes(self):
+        try:
+            if os.path.exists(self.HASHES_FILE):
+                with open(self.HASHES_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        self.clear_all_data()
+                    else:
+                        self.processed_media_hashes = data
+            else:
+                self.processed_media_hashes = {}
+        except Exception as e:
+            print(f"Error loading hashes: {e}")
+            self.processed_media_hashes = {}
 
-def save_hashes():
-    try:
-        with open(HASHES_FILE, 'w', encoding='utf-8') as f:
-            json.dump(list(processed_media_hashes), f)
-    except Exception as e:
-        print(f"Error saving hashes: {e}")
+    def clear_all_data(self):
+        self.processed_media_hashes.clear()
+        try:
+            os.remove(self.HASHES_FILE)
+        except Exception:
+            pass
+            
+        images_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images')
+        if os.path.exists(images_dir):
+            try:
+                shutil.rmtree(images_dir)
+                os.makedirs(images_dir)
+            except Exception as e:
+                print(f"Error clearing images folder: {e}")
+        
+        self.save_hashes()
 
-def clear_media_hashes():
-    global processed_media_hashes
-    processed_media_hashes.clear()
-    try:
-        os.remove(HASHES_FILE)
-    except Exception as e:
-        pass
-    finally:
-        save_hashes()
+    def save_hashes(self):
+        try:
+            with open(self.HASHES_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self.processed_media_hashes, f)
+        except Exception as e:
+            print(f"Error saving hashes: {e}")
+
+    def get_media_hash(self, media_data):
+        sha256_hash = hashlib.sha256()
+        media_data.seek(0)
+        sha256_hash.update(media_data.read())
+        media_data.seek(0)
+        return sha256_hash.hexdigest()
+
+    def file_exists(self, media_data, output_path):
+        new_hash = self.get_media_hash(media_data)
+        
+        if not os.path.exists(output_path):
+            self.processed_media_hashes[output_path] = new_hash
+            self.save_hashes()
+            return False
+            
+        if output_path not in self.processed_media_hashes:
+            self.processed_media_hashes[output_path] = new_hash
+            self.save_hashes()
+            return False
+            
+        old_hash = self.processed_media_hashes[output_path]
+        if new_hash != old_hash:
+            self.processed_media_hashes[output_path] = new_hash
+            self.save_hashes()
+            return False
+            
+        return True
+    
+hash_manager = FileHashManager()
 
 with open('templates/output.html', 'w', encoding='utf-8') as f:
     f.write("""
@@ -248,8 +292,10 @@ def open_folder():
         if os.path.exists(folder):
             if os.name == 'nt':
                 subprocess.Popen(f'explorer {folder}')
-            elif os.name == 'posix': 
-                subprocess.Popen(['open', folder] if sys.platform == 'darwin' else ['xdg-open', folder])
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', folder])
+            else:
+                return jsonify(message='Операционная система не поддерживается для открытия папки!')
             return jsonify(message='Folder opened!')
         else:
             return jsonify(message='Folder not found!')
@@ -260,8 +306,47 @@ def set_clipboard_files(file_paths):
     paths_str = '","'.join(file_paths) 
     command = f'powershell Set-Clipboard -LiteralPath "{paths_str}"'
     os.system(command)
-    print(f"Files {file_paths} copied to clipboard!")
+    print(f"Successfully copied {len(file_paths)} files to clipboard")
 
+def set_clipboard_files_mac(file_paths):
+    try:
+        file_aliases = []
+        for path in file_paths:
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"File not found: {path}")
+            abs_path = os.path.abspath(path)
+            abs_path = abs_path.replace('"', r'\"').replace('\\', r'\\')
+            file_aliases.append(f'POSIX file "{abs_path}"')
+
+        file_list = ", ".join(file_aliases)
+        
+        script = f'''
+            set fileList to {{{file_list}}}
+            tell application "Finder"
+                activate
+                set selection to fileList
+            end tell
+            delay 0.5
+            tell application "System Events"
+                keystroke "c" using command down
+            end tell
+            delay 0.2
+        '''
+        
+        result = subprocess.run(['osascript', '-e', script], 
+                              capture_output=True, 
+                              text=True, 
+                              check=True)
+        
+        if result.stderr:
+            raise Exception(f"AppleScript error: {result.stderr}")
+            
+        print(f"Successfully copied {len(file_paths)} files to clipboard")
+        
+    except subprocess.CalledProcessError as e:
+        raise Exception(f"AppleScript error: {e.stderr if e.stderr else str(e)}")
+    except FileNotFoundError as e:
+        raise Exception(f"File error: {e}")
 
 @app.route('/stop-processing', methods=['POST'])
 def stop_processing():
@@ -273,8 +358,9 @@ def stop_processing():
 @app.route('/copy-files', methods=['POST'])
 def copy_files():
     try:
-        if platform.system() != 'Windows':
-            return jsonify(message='Windows only'), 400
+        system = platform.system()
+        if system not in ('Windows', 'Darwin'):
+            return jsonify(message='Unsupported OS'), 400
         if not os.path.exists(folder):
             return jsonify(message='Folder not found!'), 404
         file_paths = []
@@ -284,7 +370,10 @@ def copy_files():
                 file_paths.append(src_file)
         if not file_paths:
             return jsonify(message='No files found in folder.'), 404
-        set_clipboard_files(file_paths)
+        if system == 'Windows':
+            set_clipboard_files(file_paths)
+        elif system == 'Darwin':
+            set_clipboard_files_mac(file_paths)
         return jsonify(message='Files copied to clipboard!')
     except Exception as e:
         return jsonify(message=str(e)), 500
@@ -640,7 +729,7 @@ def correct_orientation(img):
     return img
 
 async def process_message(message, message_index):
-
+    global hash_manager
     def get_at_word(message):
         text = html.escape(message.text).replace('\n', '<br>').replace('`', "'")
         text = re.sub(r'\\[|\\]|\\(|\\)', ' ', text)
@@ -693,24 +782,6 @@ async def process_message(message, message_index):
             </script>
             """)
             return at_word
-        
-    def get_media_hash(media_data):
-        sha256_hash = hashlib.sha256()
-        media_data.seek(0)
-        sha256_hash.update(media_data.read())
-        media_data.seek(0)
-        return sha256_hash.hexdigest()
-
-    def file_exists(media_data, output_path):
-        global processed_media_hashes
-        media_hash = get_media_hash(media_data)
-        
-        if (media_hash in processed_media_hashes) and (os.path.exists(output_path)):
-            return True
-            
-        processed_media_hashes.add(media_hash)
-        save_hashes()
-        return False
     
     output_file = f'templates/output_{message_index}.html'
     output_main_file = f'templates/output.html'
@@ -726,7 +797,7 @@ async def process_message(message, message_index):
                         
                         output_video_path = f"images/{at_word if at_word else 'output_video'}.mp4"
                         
-                        if file_exists(media_data, output_video_path):
+                        if hash_manager.file_exists(media_data, output_video_path):
                             print(f"Видео {output_video_path} уже существует, пропускаем обработку")
                             with open(output_video_path, 'rb') as video_file:
                                 video_bytes = video_file.read()
@@ -789,7 +860,7 @@ async def process_message(message, message_index):
                             output_gif_path = f"images/{at_word if at_word else f'output_gif_{uuid.uuid4()}'}.gif"
                             
                             # Проверяем существование GIF
-                            if file_exists(media_data, output_gif_path):
+                            if hash_manager.file_exists(media_data, output_gif_path):
                                 print(f"GIF {output_gif_path} уже существует, пропускаем обработку")
                                 with open(output_gif_path, 'rb') as gif_file:
                                     gif_bytes = gif_file.read()
@@ -858,7 +929,7 @@ async def process_message(message, message_index):
             at_word, text = get_at_word(message)
             output_image_path = f"images/{at_word}.png"
 
-            if file_exists(media_data, output_image_path):
+            if hash_manager.file_exists(media_data, output_image_path):
                 print(f"Изображение {output_image_path} уже существует, пропускаем обработку")
                 with open(output_image_path, 'rb') as img_file:
                     img_bytes = img_file.read()
@@ -1036,6 +1107,7 @@ async def process_messages_for_author(
 ):
     global last_author
     global isProcessing
+    global hash_manager
 
     if client_to_use is None:
         if event is not None:
@@ -1053,10 +1125,7 @@ async def process_messages_for_author(
         id_file.write(str(event.chat_id) if event is not None else str(chat_id_to_use))
     
     if original_author != last_author and AUTO_DELETE_ENABLED: 
-        folder_path = "./images"
-        for filename in os.listdir(folder_path):
-            os.remove(os.path.join(folder_path, filename))
-        clear_media_hashes()
+        hash_manager.clear_all_data()
     if original_author != last_author and switch:  
            asyncio.create_task(delete_files_py())
 
