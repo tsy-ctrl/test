@@ -313,13 +313,15 @@ def set_clipboard_files_mac(file_paths):
         file_aliases = []
         for path in file_paths:
             if not os.path.exists(path):
-                raise FileNotFoundError(f"File not found: {path}")
+                raise FileNotFoundError(f"Файл не найден: {path}")
             abs_path = os.path.abspath(path)
+
             abs_path = abs_path.replace('"', r'\"').replace('\\', r'\\')
-            file_aliases.append(f'POSIX file "{abs_path}"')
+
+            file_aliases.append(f'POSIX file "{abs_path}" as alias')
 
         file_list = ", ".join(file_aliases)
-        
+        print(file_list)
         script = f'''
             set fileList to {{{file_list}}}
             tell application "Finder"
@@ -333,20 +335,20 @@ def set_clipboard_files_mac(file_paths):
             delay 0.2
         '''
         
-        result = subprocess.run(['osascript', '-e', script], 
-                              capture_output=True, 
-                              text=True, 
-                              check=True)
+        result = subprocess.run(['osascript', '-e', script],
+                                capture_output=True,
+                                text=True,
+                                check=True)
         
         if result.stderr:
-            raise Exception(f"AppleScript error: {result.stderr}")
+            raise Exception(f"Ошибка AppleScript: {result.stderr}")
             
         print(f"Successfully copied {len(file_paths)} files to clipboard")
         
     except subprocess.CalledProcessError as e:
-        raise Exception(f"AppleScript error: {e.stderr if e.stderr else str(e)}")
+        raise Exception(f"Ошибка AppleScript: {e.stderr if e.stderr else str(e)}")
     except FileNotFoundError as e:
-        raise Exception(f"File error: {e}")
+        raise Exception(f"Ошибка файла: {e}")
 
 @app.route('/stop-processing', methods=['POST'])
 def stop_processing():
