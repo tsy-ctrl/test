@@ -80,18 +80,21 @@ class FileHashManager:
         self.processed_media_hashes.clear()
         try:
             os.remove(self.HASHES_FILE)
-        except Exception:
-            pass
+            images_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images')
+            if os.path.exists(images_dir):
+                try:
+                    for filename in os.listdir(images_dir):
+                        file_path = os.path.join(images_dir, filename)
+                        if os.path.isfile(file_path):
+                            os.unlink(file_path)
+                        elif os.path.isdir(file_path):
+                            shutil.rmtree(file_path)
+                except Exception as e:
+                    print(f"Error clearing images folder: {e}")
             
-        images_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'images')
-        if os.path.exists(images_dir):
-            try:
-                shutil.rmtree(images_dir)
-                os.makedirs(images_dir)
-            except Exception as e:
-                print(f"Error clearing images folder: {e}")
-        
-        self.save_hashes()
+            self.save_hashes()
+        except Exception as e: 
+            print(e)
 
     def save_hashes(self):
         try:
@@ -107,26 +110,36 @@ class FileHashManager:
         media_data.seek(0)
         return sha256_hash.hexdigest()
 
+    def get_file_base_name(self, file_path):
+        return os.path.splitext(os.path.basename(file_path))[0]
+
+    def remove_related_files_and_hashes(self, new_file_path):
+   
+        new_base_name = self.get_file_base_name(new_file_path)
+        keys_to_remove = []
+        for existing_path in self.processed_media_hashes.keys():
+            if self.get_file_base_name(existing_path) == new_base_name:
+                keys_to_remove.append(existing_path)
+                if os.path.exists(existing_path):
+                    try:
+                        os.remove(existing_path)
+                    except Exception as e:
+                        print(f"Error removing file {existing_path}: {e}")
+
+        for key in keys_to_remove:
+            del self.processed_media_hashes[key]
+
     def file_exists(self, media_data, output_path):
         new_hash = self.get_media_hash(media_data)
         
-        if not os.path.exists(output_path):
-            self.processed_media_hashes[output_path] = new_hash
-            self.save_hashes()
-            return False
-            
-        if output_path not in self.processed_media_hashes:
-            self.processed_media_hashes[output_path] = new_hash
-            self.save_hashes()
-            return False
-            
-        old_hash = self.processed_media_hashes[output_path]
-        if new_hash != old_hash:
-            self.processed_media_hashes[output_path] = new_hash
-            self.save_hashes()
-            return False
-            
-        return True
+        if output_path in self.processed_media_hashes:
+            if new_hash == self.processed_media_hashes[output_path]:
+                return True
+        
+        self.remove_related_files_and_hashes(output_path)
+        self.processed_media_hashes[output_path] = new_hash
+        self.save_hashes()
+        return False
     
 hash_manager = FileHashManager()
 
@@ -317,9 +330,7 @@ def set_clipboard_files_mac(file_paths):
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Файл не найден: {path}")
             abs_path = os.path.abspath(path)
-            # Экранируем кавычки и обратные слэши
             abs_path = abs_path.replace('"', r'\"').replace('\\', r'\\')
-            # Формируем строку для AppleScript с указанием alias
             file_aliases.append(f'POSIX file "{abs_path}" as alias')
 
         if not file_aliases:
@@ -1166,7 +1177,7 @@ async def process_messages_for_author(
     if original_author != last_author and AUTO_DELETE_ENABLED: 
         hash_manager.clear_all_data()
     if original_author != last_author and switch:  
-           asyncio.create_task(delete_files_py())
+        asyncio.create_task(delete_files_py())
 
     last_author = original_author
     chat_user = ""
